@@ -58,7 +58,7 @@ setup(
     author_email="roskakori@users.sourceforge.net",
     url="http://pypi.python.org/pypi/tratihubis/",
     license="BSD License",
-    long_description=tratihubis.__doc__, #@UndefinedVariable
+    long_description=tratihubis.__doc__,  # @UndefinedVariable
     install_requires=["PyGithub>=0.6"],
     classifiers=[
         "Development Status :: 3 - Alpha",
