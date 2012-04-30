@@ -1,0 +1,12 @@
+id,type,owner,reporter,milestone,status,resolution,summary,description
+1,defect,roskakori,roskakori,0.5.0,closed,fixed,_Test defect with single line,A simple defect.
+2,defect,roskakori,roskakori,1,new,None,_Test defect with multiple lines,"A defect that is so complex that it needs multiple lines to describe.
+
+Here is another line."
+3,enhancement,roskakori,roskakori,0.5.0,closed,fixed,_Test enhancement,"An enhancement that brings multiple improvements:
+
+ * some
+ * other
+ * next
+ * more
+ * ..."

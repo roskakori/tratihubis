@@ -202,6 +202,8 @@ def _parsedOptions(arguments):
         usage=Usage,
         version="%prog " + __version__
     )
+    parser.add_option("-R", "--really", action="store_true", dest="really",
+                      help="really perform the conversion")
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
                       help="log all actions performed in console")
     (options, others) = parser.parse_args(arguments)
@@ -214,7 +216,7 @@ def _parsedOptions(arguments):
 
     configPath = others[0]
 
-    return configPath
+    return options, configPath
 
 
 def main(argv=None):
@@ -223,18 +225,20 @@ def main(argv=None):
 
     exitCode = 1
     try:
-        configPath = _parsedOptions(argv[1:])
+        options, configPath = _parsedOptions(argv[1:])
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
         password = config.get('tratihubis', 'password')
         repoName = config.get('tratihubis', 'repo')
         ticketsCsvPath = config.get('tratihubis', 'tickets')
         user = config.get('tratihubis', 'user')
+        if not options.really:
+            _log.warning(u'no actions are performed unless command line option --really is specified')
         _log.info('log on to github as user "%s"', user)
         hub = github.Github(user, password)
         _log.info('connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(repo, ticketsCsvPath, pretend=True)
+        migrateTickets(repo, ticketsCsvPath, pretend=not options.really)
         exitCode = 0
     except (EnvironmentError, OSError), error:
         _log.error(error)
