@@ -1,0 +1,179 @@
+id,type,owner,reporter,milestone,status,resolution,summary,description
+1,defect,roskakori,roskakori,0.5.0,closed,fixed,Handle numbers and dates in Excel properly,"Excel internally uses float to represent any number or date. Xlrd's cell.value yields float values, which currently confuse cutplace field validation which expects strings."
+2,defect,roskakori,roskakori,1.0,new,None,Report line delimiter violations in CSV data,"In the ICD you can specify the line delimiter to use (for example ""LF""). However, currently cutplace does not report if the data use other line delimiters.
+
+The reason for that is because Python's standard csv.reader is broken in this respect."
+3,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Add simple homepage,"Currently the cutplace web site shows the user guide. It would be more useful to have a simple page that links to the relevant resources related to cutplace, in particular:
+
+ * forums
+ * user guide
+ * PyPI page
+ * Trac
+ * ..."
+4,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Add a proper tutorial,"The current tutorial in the user guide shows a huge ICD and explains the various aspects of it. It would be more useful to start with a very simple ICD containing only text fields and start refining the field format and adding checks with multiple steps.
+
+This would allow to outline the various features and uses in a way that is easier to understand for first time users.
+
+The examples from the tutorial should be stored in examples/tutorial, which should have to positive side effect of increasing the cheesecake score."
+5,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Add Decimal field type,"Currently there is only a field type ""Integer"" to specify numbers, which is not appropriate for monetary values like ""17.30"".
+
+The syntax for the Decimal type has to be considered, but as a first stab (expressed as CSV):
+
+,Name,Example,Type,Empty,Length,Rule
+F,amount,17.30,Decimal,,,12.2
+
+The rule ""12.2"" could mean ""12 digits with 2 of them after to dot""."
+6,enhancement,roskakori,roskakori,0.5.1,closed,fixed,Support Excel and ODS as ICD format for web server,Currently a ICD passed to the cutplace web server has to be in CSV format. The server should be able to auto detect the format of the ICD and handle Excel and ODS properly.
+7,task,roskakori,roskakori,,closed,wontfix,Move developer documentation to Wiki,"Currently the developer documentation is part of the user guide, see section ""Development"".
+
+It might me useful to integrate it in the Trac project site."
+8,defect,roskakori,roskakori,0.4.3,closed,fixed,"Auto detection of CSV dialect does not recognize "";"" as item delimiter","Actually, the whole dialect auto detection broke with change [160]. While !DelimitedParser still detects the dialect properly, it does not pass it to csv.reader().
+
+For instance, if you have an ICD which uses "";"" as item delimiter, cutplace will reject it with a message like:
+
+> cannot process Excel format: first item in row 1 is ';some heading..."" but must be empty or one of: ['c', 'd', 'f']
+"
+9,defect,roskakori,roskakori,0.4.4,closed,fixed,Reset checks when validating multiple data files,"Currently checks maintain their state after validating the first data file, and consequently easily start to choke on data in the second file.
+
+For instance, !IsUniqueCheck remembers the unique values from the first file, and complains if a value shows up again in the second file although this is perfectly valid."
+10,enhancement,roskakori,roskakori,,new,None,Add rule for Decimal field format,"Currently the Decimal field format demands the rule to to empty.
+
+Naturally it would be nice to address:
+
+ * The format (leading zeros, number of digits before or after the decimal separator)
+ * localization issues (decimal separator (""."" or "",""), optional thousands separator)
+ * Value range (greater than 0, between -100.00 and +999.99, ...)
+"
+11,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Migrate user guide from DocBook to Restructured Text,"...mostly in order to be more Pythonic. Still, will look nicer out of the box and there will be a ""Search"" field without any effort. The tool of choice is sphinx."
+12,task,roskakori,roskakori,0.7.0,closed,fixed,"Simplify build process (ant, setup.py)","This includes:
+
+ * get rid of build.xml
+ * get rid of !DocBook, see ticket #11
+ * get rid of XSL transformation of version.xml"
+13,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Add proper test command to setup.py,"The test suite in test_all.py resp. dev_test.py should be called when running
+
+  python setup.py test
+"
+14,enhancement,roskakori,roskakori,0.5.0,closed,fixed,Move field type before field rule,"Currently a field is defined using:
+
+> name,example, type, empty, length, rule
+
+From now on this should be:
+
+> name, example, empty, length, type rule
+
+This has the advantage that domain experts get confused a little later in the line, and have more information the they can relate to before this happens."
+15,enhancement,roskakori,roskakori,0.5.0,closed,fixed,"Make field type optional and use ""Text"" as default",This allows to quickly prototype the ICD fields section by simply enumerating the field names.
+16,enhancement,roskakori,roskakori,,accepted,None,Add ICD format version,"The ICD should detect if the format version does not match the cutplace version and quickly exit with a constructive error message.
+
+This could be implemented by having to specify the format version before anything else, for example:
+
+> V,ICD format version, 1"
+17,enhancement,roskakori,roskakori,0.5.3,closed,fixed,Add option to split data in accepted and rejected rows,"If the option --split is set, accepted rows will be stored in *_accepted.csv and rejected ones in *_rejected.csv"
+18,defect,roskakori,roskakori,0.5.3,closed,fixed,Handle encoding errors in ICD and data properly,"Currently character encoding errors in the ICD or data result in a cryptic stack dump and program exit, for example:
+
+> !UnicodeDecodeError: 'ascii' codec can't decode byte 0x8a in position 1: ordinal not in range(128)
+
+
+Instead, cutplace should stop processing the ICD/data and show a compact error message."
+19,defect,roskakori,roskakori,0.5.4,closed,fixed,--split should actually write files,"--split does not work as described, no *_accepted.csv and *.rejected.txt are written."
+20,defect,roskakori,roskakori,0.6.2,closed,fixed,Treat Python keywords in field names as error,"When declaring a field in the ICD using a Python keyword as name (for example ""if""), cutplace should reject the ICD and report an error.
+
+Currently such names work find unless the show up in Checks that internally attempt to assign the field to a Python variable."
+21,defect,roskakori,roskakori,0.6.4,closed,fixed,Web interface should be able to use ICDs in Excel format,
+22,defect,roskakori,roskakori,0.6.3,closed,fixed,Add source distribution,"Add a source distribution based on
+
+  python setup.py sdist --formats=zip""
+
+which would simplify installation for Jython and platforms without setuptools. With this, the following should be possible:
+
+  python setup.py install
+
+
+"
+23,enhancement,roskakori,roskakori,,new,None,"Add support for ""setup.py install""","Installtion should be possible using
+
+  python setup.py install
+
+which would be nice for systems without setuptools installed. This would also simplify installation for Jython, which currently requires the usage of the repository to obtain a working cutplace."
+24,enhancement,roskakori,roskakori,0.6.1,closed,fixed,Add possibility to specify decimal separator,"It should be possible to specify the decimal separator used by DecimalFieldFormat. Possible values should be ""."" and "",""."
+25,enhancement,roskakori,roskakori,0.6.1,closed,fixed,Allow quoted and escaped values for choices in ChoiceFieldFormat,"Currently choices can only be single words separated by a comma. It should be possible to specify strings using all of Pythons capabilities, for example:
+
+F;color;;;red,""green"",""bl,ue"",""yell\tow"""
+26,defect,roskakori,roskakori,0.6.2,closed,fixed,Include input location in errors detected in fixed data,"When detecting error while reading fixed data, the exact location in the input (file, line, ...) should be included in the information presented to the user."
+27,defect,roskakori,roskakori,0.6.2,closed,fixed,Include input location in errors detected in ODS data,"When detecting error while reading ODS data, the exact location in the input (file, line, ...) should be included in the information presented to the user."
+28,enhancement,roskakori,roskakori,0.6.2,closed,fixed,Include input location in errors detected in CSV data,"When detecting error while reading CSV data, the exact location in the input (file, line, ...) should be included in the information presented to the user."
+29,enhancement,roskakori,roskakori,0.7.1,new,None,Include input location in errors detected in ICD,"When detecting error while reading the ICD, the exact location in the input (file, line, ...) should be included in the information presented to the user."
+30,defect,roskakori,roskakori,0.6.2,closed,fixed,ValidationListener does not receive checks failed at end,"When !InterfaceControlDocument.validate() calls check.checkAtEnd(), the validation listener has already been removed and won't get any events."
+31,task,roskakori,roskakori,0.8.0,assigned,None,Add test case for web validation,"Make test_web.py work.
+
+The poster module could be useful for this: <http://pypi.python.org/pypi/poster/>."
+32,defect,roskakori,roskakori,0.7.0,closed,fixed,Reduce memory foot print of CSV reading,"Currently the CSV reader stores the whole file in memory before parsing it. This is a relict of refactoring the whole parser infrastructure several times during the early days of cutplace.
+
+The proper solution would be to use a consumer/producer like for ODS, where the producer would read the CSV in a separate thread."
+33,task,roskakori,roskakori,0.8.0,new,None,Add example for own field and check to API tutorial,
+34,defect,roskakori,roskakori,0.6.3,closed,fixed,Change public instance variables to read only properties,...so they show up in the API documentation properly.
+35,defect,roskakori,roskakori,0.6.3,closed,fixed,Change InterfaceControlDocument.checkNames to return check names in order defined,"Currently it uses whatever order the dictionary's keys() returns.
+
+Note: turns out `checkNames` was horribly broken and actually returned the field format names."
+36,defect,roskakori,roskakori,0.6.3,closed,fixed,Added emptyValue parameter to constructors of all field formats,
+37,enhancement,roskakori,roskakori,0.7.1,new,None,Use fnmatch in PatternFieldFormat,...instead of carefully handmade regex converter.
+38,enhancement,roskakori,roskakori,0.8.0,new,None,Add rule to TextFieldFormat to specify allowed characters,
+39,enhancement,roskakori,roskakori,0.6.4,closed,fixed,Add tool to generate draft ICD by analyzing example files,"Usage should be along the line of:
+
+{{{
+cutsniff ICD_customers.csv sample_customers1.ods
+}}}"
+40,task,roskakori,roskakori,0.7.0,closed,fixed,Replace test and coverage reports with Jenkins,Get rid of dev_*.py and use a Jenkins job instead.
+41,enhancement,roskakori,nougat98,0.7.1,closed,fixed,would like examples to be stored ICD object,"i would like the fieldExamples to be attached to the icd objects so I can retrieve them to display upon errors.
+
+presently the field examples are validated against the formats then ignorned"
+42,defect,roskakori,nougat98,0.7.1,closed,fixed,check errors get reported as a non-existent column,"let's say I have 17 fields, and checks at the end of my icd like:
+
+{{{
+C,filename must be unique,IsUnique,Filename,,,
+}}}
+These checks get reported for ""column 18"", which doesn't actually exist. 
+
+Row check failed: filename must be unique: tmpaCF0y7 (R4C18): unique [Filename] has already occurred: [dir2/test2-1.dat] (see also: tmpaCF0y7 (R3C18): location of previous occurrence) (row 4)
+
+This is misleading if we are trying to coalesce repeated errors or otherwise use those Row-Column units. If the error could be simply R3C* or something it would be easier to handle.
+"
+43,defect,roskakori,rufus-devrel,,closed,worksforme,"Impossible to set range on Integers:""must be within range: '-2147483648:2147483647'""","It is impossible to change the range (length) of Integer fields: length is ignored.
+
+Please change fields.py:IntegerFieldFormat:__init__ from 
+        self.rangeRule = ranges.Range(rule, length)
+to:
+        if not length:
+          length = IntegerFieldFormat._DEFAULT_RANGE
+        self.rangeRule = ranges.Range(rule, length)
+
+Version information:
+cutplace 0.6.8 (2011-07-26, r541)
+Python 2.6.5, Linux-2.6.38.8-gg683-x86_64-with-Ubuntu-10.04-lucid
+
+Specific error:
+error: 100-data.csv (R2C1): field u'customer_id' must match format: value is 9999125515L but must be within range: '-2147483648:2147483647'"
+44,enhancement,roskakori,roskakori,0.7.0,closed,fixed,Add support for plugins for own field formats and checks,Add command line option `--plugins` to specify folder which should be scanned for python modules to import. These modules can define classes derived from `AbstractFieldFormat` and `AbstractCheck` which are available for ICDs to use.
+45,enhancement,roskakori,roskakori,0.7.1,new,None,Add validating writer,Add a writer similar to csv.writer that validates the written data.
+46,defect,roskakori,roskakori,0.7.1,new,None,Fix that command line client gets stuck on ICD in ODS format with syntax error,"Steps to reproduce:
+
+{{{
+$ cutplace tests/input/icds/broken_syntax_error.ods 
+ERROR:cutplace:broken_syntax_error.ods (R13C3): cannot validate example for field u'gender': value is u'some' but must be one of: u'male' or u'female'
+}}}"
+47,task,roskakori,roskakori,0.7.1,accepted,None,Move project to github,"Advantages:
+
+* easier to fork and contribute
+* faster and cleaner user interface than !SourceForge
+
+Considerations:
+
+* How to migrate existing Trac tickets?
+* Forum will be gone; this should be no real loss given the past activity."
+48,enhancement,roskakori,roskakori,0.7.1,accepted,None,Add sniffing of numeric fields,"Goals:
+
+ * fields always containing integer values get a sniffed type `Integer`.
+ * fields always containing decimal values get a sniffed type `Decimal` with data formats properties `decimal separator` and `thousands separator` set accordingly.
+ * If there are both fields with ""."" and "","" as decimal separator, change one of them to `Text` by majority vote. In case counts are equal, prefer ""."".
+"
