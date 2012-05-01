@@ -1,22 +1,5 @@
 '''
-Installer for tratihubis.
-
-Developer cheat sheet
----------------------
-
-Create the installer archive::
-
-  $ python setup.py sdist --formats=zip
-
-Upload release to PyPI::
-
-  $ python test/test_tratihubis.py
-  $ python setup.py sdist --formats=zip upload
-
-Tag a release::
-
-  $ git tag -a -m 'Tagged version 1.x.' v1.x
-  $ git push --tags
+Tests for tratihubis.
 '''
 # Copyright (c) 2012, Thomas Aglassinger
 # All rights reserved.
@@ -44,31 +27,42 @@ Tag a release::
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-from setuptools import setup
+import ConfigParser
+import github
+import logging
+import os.path
+import unittest
 
 import tratihubis
 
-setup(
-    name='tratihubis',
-    version=tratihubis.__version__,
-    py_modules=['tratihubis'],
-    description='convert Trac tickets to Github issues',
-    keywords='trac github ticket issue convert migrate',
-    author='Thomas Aglassinger',
-    author_email='roskakori@users.sourceforge.net',
-    url='http://pypi.python.org/pypi/tratihubis/',
-    license='BSD License',
-    long_description=tratihubis.__doc__,  # @UndefinedVariable
-    install_requires=['PyGithub>=0.6', 'setuptools'],
-    classifiers=[
-        'Development Status :: 3 - Alpha',
-        'Environment :: Console',
-        'Intended Audience :: Developers',
-        'License :: OSI Approved :: BSD License',
-        'Natural Language :: English',
-        'Operating System :: OS Independent',
-        'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7',
-        'Topic :: Software Development :: Bug Tracking',
-    ]
-)
+_TEST_CONFIG_PATHS = [
+    os.path.expanduser(os.path.join('~', '.tratihubis_testxx')),
+    os.path.expanduser(os.path.join('~', 'tratihubis_test.cfg'))
+]
+
+
+class TratihubisTest(unittest.TestCase):
+    def _testCanConvertTicketsCsv(self, ticketsCsvPath):
+        config = ConfigParser.SafeConfigParser()
+        config.read(_TEST_CONFIG_PATHS)
+        if not config.has_section('tratihubis'):
+            raise ConfigParser.Error(u'test user and password must be specified in section [tratihubis] ' \
+                    + 'in one of the following files: %s' % _TEST_CONFIG_PATHS)
+        password = config.get('tratihubis', 'password')
+        user = config.get('tratihubis', 'user')
+        repoName = 'tratihubis'
+        hub = github.Github(user, password)
+        repo = hub.get_user().get_repo(repoName)
+        tratihubis.migrateTickets(repo, ticketsCsvPath, pretend=True)
+
+    def testCanConvertTestTicketsCsv(self):
+        self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'))
+
+    def testCanConvertCutplaceTicketsCsv(self):
+        self._testCanConvertTicketsCsv(os.path.join('test', 'cutplace_tickets.csv'))
+
+
+if __name__ == "__main__":
+    #import sys;sys.argv = ['', 'Test.testName']
+    logging.basicConfig(level=logging.INFO)
+    unittest.main()

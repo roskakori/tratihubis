@@ -1,23 +1,28 @@
 """
-Tratihubis converts Trac tickets to Github issues.
+Tratihubis converts Trac tickets to Github issues by using the following steps:
+
+1. The user manually exports the Trac tickets to convert to a CSV file.
+2. Tratihubis reads the CSV file and uses the data to create Github issues and milestones.
 
 
 Installation
 ============
 
-To install tratihubis, use ``pip`` or ``easy_install``. It requires the PyGithub package available from PyPI::
+To install tratihubis, use ``pip`` or ``easy_install``::
 
-  $ pip PyGithub
-  $ pip tratihubis
+  $ pip install tratihubis
+
+If needed, this also installs the `PyGithub <http://pypi.python.org/pypi/PyGithub/>`_ package.
 
 
 Usage
 =====
 
 Information about Trac tickets to convert has to be provided in a CSV file. To obtain this CSV file, create a
-new Trac query using the SQL statement stored in "query_tickets.sql" and saving the result by clicking
-"Download in other formats: Comma-delimited Text" and choosing for example ``/Users/me/mytool/tickets.csv``
-as output file.
+new Trac query using the SQL statement stored in
+`query_tickets.sql <https://github.com/roskakori/tratihubis/blob/master/query_tickets.sql>`_ and saving the
+result by clicking "Download in other formats: Comma-delimited Text" and choosing for example
+``/Users/me/mytool/tickets.csv`` as output file.
 
 Next create a config file to describe how to login to Github and what to convert. For example, you could
 store the following in ``/Users/me/mytool/tratihubis.cfg``::
@@ -30,7 +35,7 @@ store the following in ``/Users/me/mytool/tratihubis.cfg``::
 
 Then run::
 
-  tratihubis /Users/me/mytool/tratihubis.cfg
+  $ tratihubis /Users/me/mytool/tratihubis.cfg
 
 
 License
