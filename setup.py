@@ -10,6 +10,7 @@ Create the installer archive::
 
 Upload release to PyPI::
 
+  $ pep8 -r --ignore=E501 *.py test/*.py
   $ python test/test_tratihubis.py
   $ python setup.py sdist --formats=zip upload
 

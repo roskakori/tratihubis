@@ -36,7 +36,7 @@ import unittest
 import tratihubis
 
 _TEST_CONFIG_PATHS = [
-    os.path.expanduser(os.path.join('~', '.tratihubis_testxx')),
+    os.path.expanduser(os.path.join('~', '.tratihubis_test')),
     os.path.expanduser(os.path.join('~', 'tratihubis_test.cfg'))
 ]
 
