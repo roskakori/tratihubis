@@ -61,6 +61,11 @@ setup(
     license='BSD License',
     long_description=tratihubis.__doc__,  # @UndefinedVariable
     install_requires=['PyGithub>=0.6', 'setuptools'],
+    entry_points={
+        "console_scripts": [
+            "tratihubis = tratihubis:_mainEntryPoint",
+        ]
+    },
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Environment :: Console',

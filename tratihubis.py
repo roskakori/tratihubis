@@ -25,7 +25,7 @@ result by clicking "Download in other formats: Comma-delimited Text" and choosin
 ``/Users/me/mytool/tickets.csv`` as output file.
 
 Next create a config file to describe how to login to Github and what to convert. For example, you could
-store the following in ``/Users/me/mytool/tratihubis.cfg``::
+store the following in ``~/mytool/tratihubis.cfg``::
 
   [tratihubis]
   user = someone
@@ -35,7 +35,38 @@ store the following in ``/Users/me/mytool/tratihubis.cfg``::
 
 Then run::
 
-  $ tratihubis /Users/me/mytool/tratihubis.cfg
+  $ tratihubis ~/mytool/tratihubis.cfg
+
+This tests that the input data and Github information is valid and writes a log to the console describing
+which operations would be performed.
+
+To actually create the Github issues, you need to enable to command line option ``--really``:: 
+
+  $ tratihubis --really ~/mytool/tratihubis.cfg
+
+Be aware that Github issues and milestones cannot be deleted in case you mess up. Your only remedy is to
+remove the whole repository and start anew. So make sure that tratihubis does what you want before you
+enable ``--really``.
+
+ 
+Limitations
+===========
+
+Currently tratihubis only converts tickets with their descriptions and milestones. It also creates
+milestones as needed.
+
+Github issues get the same owner as the Trac ticket. This only works if the Trac user has the same name on
+Github. If this is not the case, manually edit the ``owner`` and ``reporter`` columns in the tickets CSV.
+
+The following information is not converted:
+
+* Github issues remain open even if the Trac ticket has been closed.
+* Trac comments are discarded instead of converted to Github comments.
+* Trac ticket details on type and resolution are discarded instead of converted to Github labels.
+* Trac Wiki markup remains instead of being converted to Github Markdown. 
+
+If you want to implement any of these features, create a fork and open a pull request at
+https://github.com/roskakori/tratihubis.  
 
 
 License
@@ -43,6 +74,18 @@ License
 
 Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under the
 `BSD License <http://www.opensource.org/licenses/bsd-license.php>`_.
+
+
+Changes
+=======
+
+Version 0.2, 2012-05-xx
+
+* Added binary in order to run ``tratihubis`` instead of ``python -m tratihubis``.
+
+Version 0.1, 2012-05-01
+
+* Initial release.
 """
 # Copyright (c) 2012, Thomas Aglassinger
 # All rights reserved.
@@ -81,7 +124,7 @@ import sys
 
 _log = logging.getLogger('tratihubis')
 
-__version__ = "0.1"
+__version__ = "0.2"
 
 _FakeMilestone = collections.namedtuple('FakeMilestone', ['number', 'title'])
 
@@ -200,9 +243,7 @@ def _parsedOptions(arguments):
     assert arguments is not None
 
     # Parse command line options.
-    Usage = """usage: %prog [options] CONFIGFILE
-
-    Convert Trac tickets to Github issues."""
+    Usage = 'usage: %prog [options] CONFIGFILE\n\n  Convert Trac tickets to Github issues.'
     parser = optparse.OptionParser(
         usage=Usage,
         version="%prog " + __version__
@@ -253,6 +294,11 @@ def main(argv=None):
         _log.exception(error)
     return exitCode
 
-if __name__ == "__main__":
+
+def _mainEntryPoint():
     logging.basicConfig(level=logging.INFO)
     sys.exit(main())
+
+
+if __name__ == "__main__":
+    _mainEntryPoint()
