@@ -41,6 +41,19 @@ _TEST_CONFIG_PATHS = [
 ]
 
 
+class UserMapTest(unittest.TestCase):
+    def testCanCreateValidUserMap(self):
+        userMap = tratihubis._createTracToGithubUserMap('hugo: sepp, *: roskakori')
+        self.assertEqual(userMap, {'*': 'roskakori', 'hugo': 'sepp'})
+        userMap = tratihubis._createTracToGithubUserMap('*:*')
+        self.assertEqual(userMap, {'*': '*'})
+        userMap = tratihubis._createTracToGithubUserMap(' * : * ')
+        self.assertEqual(userMap, {'*': '*'})
+
+    def testFailsOnDuplicateUser(self):
+        self.assertRaises(tratihubis._ConfigError, tratihubis._createTracToGithubUserMap, 'hugo: sepp, hugo: resi')
+
+
 class TratihubisTest(unittest.TestCase):
     def _testCanConvertTicketsCsv(self, ticketsCsvPath):
         config = ConfigParser.SafeConfigParser()
@@ -51,9 +64,10 @@ class TratihubisTest(unittest.TestCase):
         password = config.get('tratihubis', 'password')
         user = config.get('tratihubis', 'user')
         repoName = 'tratihubis'
+        userMapping = 'johndoe: jdoe78, *: roskakori'
         hub = github.Github(user, password)
         repo = hub.get_user().get_repo(repoName)
-        tratihubis.migrateTickets(repo, ticketsCsvPath, pretend=True)
+        tratihubis.migrateTickets(repo, ticketsCsvPath, userMapping=userMapping, pretend=True)
 
     def testCanConvertTestTicketsCsv(self):
         self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'))
@@ -64,5 +78,5 @@ class TratihubisTest(unittest.TestCase):
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()

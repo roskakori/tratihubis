@@ -40,7 +40,7 @@ Then run::
 This tests that the input data and Github information is valid and writes a log to the console describing
 which operations would be performed.
 
-To actually create the Github issues, you need to enable to command line option ``--really``:: 
+To actually create the Github issues, you need to enable to command line option ``--really``::
 
   $ tratihubis --really ~/mytool/tratihubis.cfg
 
@@ -48,7 +48,18 @@ Be aware that Github issues and milestones cannot be deleted in case you mess up
 remove the whole repository and start anew. So make sure that tratihubis does what you want before you
 enable ``--really``.
 
- 
+In case the Trac users have different user names on Github, you can specify a mapping. For example::
+
+   users = johndoe: jdoe78, *: me
+
+This would map the Trac user ``johndoe`` to the Github user ``jdoe78`` and everyone else to the user ``me``.
+The default value is::
+
+  users = *:*
+
+This maps every Trac user to a Github user with the same name.
+
+
 Limitations
 ===========
 
@@ -63,10 +74,10 @@ The following information is not converted:
 * Github issues remain open even if the Trac ticket has been closed.
 * Trac comments are discarded instead of converted to Github comments.
 * Trac ticket details on type and resolution are discarded instead of converted to Github labels.
-* Trac Wiki markup remains instead of being converted to Github Markdown. 
+* Trac Wiki markup remains instead of being converted to Github Markdown.
 
 If you want to implement any of these features, create a fork and open a pull request at
-https://github.com/roskakori/tratihubis.  
+https://github.com/roskakori/tratihubis.
 
 
 License
@@ -79,9 +90,11 @@ Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under t
 Changes
 =======
 
-Version 0.2, 2012-05-xx
+Version 0.2, 2012-05-02
 
+* Added config option ``users`` to map Trac users to Github users.
 * Added binary in order to run ``tratihubis`` instead of ``python -m tratihubis``.
+* Changed supposed issue number in log to take existing issues in account.
 
 Version 0.1, 2012-05-01
 
@@ -126,7 +139,17 @@ _log = logging.getLogger('tratihubis')
 
 __version__ = "0.2"
 
+_SECTION = 'tratihubis'
+_OPTION_USERS = 'users'
+
 _FakeMilestone = collections.namedtuple('FakeMilestone', ['number', 'title'])
+
+
+class _ConfigError(Exception):
+    def __init__(self, option, message):
+        assert option is not None
+        assert message is not None
+        Exception.__init__(self, u'cannot process option "%s" in section "%s": %s' % (_SECTION, option, message))
 
 
 class _UTF8Recoder:
@@ -159,6 +182,18 @@ class _UnicodeCsvReader:
 
     def __iter__(self):
         return self
+
+
+def _getConfigOption(config, name, required=True, defaultValue=None):
+    try:
+        result = config.get(_SECTION, name)
+    except ConfigParser.NoOptionError:
+        if required:
+            raise _ConfigError(name, 'config must contain a value for this option')
+        result = defaultValue
+    except ConfigParser.NoSectionError:
+        raise _ConfigError(name, u'config must contain this section')
+    return result
 
 
 def _tracTicketMaps(ticketsCsvPath):
@@ -199,20 +234,40 @@ def _createMilestoneMap(repo):
     _log.info(u'analyze existing milestones')
     for milestone in repo.get_milestones():
         result[milestone.title] = milestone
-        _log.info(u'  %d: %s', milestone.number, milestone.title)
+        _log.debug(u'  %d: %s', milestone.number, milestone.title)
+    _log.info(u'  found %d milestones', len(result))
     return result
 
 
-def migrateTickets(repo, ticketsCsvPath, firstTicketIdToConvert=1, lastTicketIdToConvert=0, pretend=True):
-    issueId = 1
+def _createIssueMap(repo):
+    def _addIssues(targetMap, state):
+        for issue in repo.get_issues(state=state):
+            _log.debug(u'  %s: (%s) %s', issue.number, issue.state, issue.title)
+            targetMap[issue.number] = issue
+    result = {}
+    _log.info(u'analyze existing issues')
+    _addIssues(result, 'open')
+    _addIssues(result, 'closed')
+    _log.info(u'  found %d issues', len(result))
+    return result
+
+
+def migrateTickets(repo, ticketsCsvPath, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
+    assert repo is not None
+    assert ticketsCsvPath is not None
+    assert userMapping is not None
+    existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
+    tracToGithubUserMap = _createTracToGithubUserMap(userMapping)
+    supposedIssueId = 1 + len(existingIssues)
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
         title = ticketMap['summary']
         if (ticketId >= firstTicketIdToConvert) \
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
-            assignee = ticketMap['owner'].strip()
+            tracOwner = ticketMap['owner'].strip()
+            githubAssignee = _githubUserFor(tracToGithubUserMap, tracOwner)
             milestoneTitle = ticketMap['milestone'].strip()
             if len(milestoneTitle) != 0:
                 if milestoneTitle not in existingMilestones:
@@ -227,14 +282,14 @@ def migrateTickets(repo, ticketsCsvPath, firstTicketIdToConvert=1, lastTicketIdT
             else:
                 milestone = None
                 milestoneNumber = 0
-            _log.info(u"convert ticket #%d to issue #%d: %s", ticketId, issueId, title)
-            _log.info(u'  owner=%s; milestone=%s (%d)', assignee, milestoneTitle, milestoneNumber)
+            _log.info(u"convert ticket #%d to issue #%d: %s", ticketId, supposedIssueId, title)
+            _log.info(u'  owner=%s-->%s; milestone=%s (%d)', tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
             if not pretend:
                 if milestone is None:
-                    repo.create_issue(title, body, assignee)
+                    repo.create_issue(title, body, githubAssignee)
                 else:
-                    repo.create_issue(title, body, assignee, milestone.number)
-            issueId += 1
+                    repo.create_issue(title, body, tracOwner, milestone.number)
+            supposedIssueId += 1
         else:
             _log.info(u'skip ticket #%d: %s', ticketId, title)
 
@@ -265,6 +320,40 @@ def _parsedOptions(arguments):
     return options, configPath
 
 
+def _createTracToGithubUserMap(definition):
+    result = {}
+    for mapping in definition.split(','):
+        words = [word.strip() for word in mapping.split(':')]
+        if words:
+            if len(words) != 2:
+                raise _ConfigError(_OPTION_USERS, u'mapping must use syntax "trac-user: github-user" but is: "%s"' % mapping)
+            tracUser, githubUser = words
+            if len(tracUser) == 0:
+                raise _ConfigError(_OPTION_USERS, u'Trac user must not be empty: "%s"' % mapping)
+            if len(githubUser) == 0:
+                raise _ConfigError(_OPTION_USERS, u'Github user must not be empty: "%s"' % mapping)
+            existingMappedGithubUser = result.get(tracUser)
+            if existingMappedGithubUser is not None:
+                raise _ConfigError(_OPTION_USERS,
+                        u'Trac user "%s" must be mapped to only one Github user instead of "%s" and "%s"' \
+                         % (tracUser, existingMappedGithubUser, githubUser))
+            result[tracUser] = githubUser
+    return result
+
+
+def _githubUserFor(tracToGithubUserMap, tracUser):
+    assert tracToGithubUserMap is not None
+    assert tracUser is not None
+    result = tracToGithubUserMap.get(tracUser)
+    if result is None:
+        result = tracToGithubUserMap.get('*')
+        if result is None:
+            raise _ConfigError(_OPTION_USERS, 'Trac user "%s" must be mapped to a Github user')
+    if result == '*':
+        result = tracUser
+    return result
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -274,10 +363,11 @@ def main(argv=None):
         options, configPath = _parsedOptions(argv[1:])
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
-        password = config.get('tratihubis', 'password')
-        repoName = config.get('tratihubis', 'repo')
-        ticketsCsvPath = config.get('tratihubis', 'tickets')
-        user = config.get('tratihubis', 'user')
+        password = _getConfigOption(config, 'password')
+        repoName = _getConfigOption(config, 'repo')
+        ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
+        user = _getConfigOption(config, 'user')
+        userMapping = _getConfigOption(config, 'users', False, '*:*')
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
         _log.info('log on to github as user "%s"', user)
