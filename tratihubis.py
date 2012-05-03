@@ -94,7 +94,7 @@ Version 0.3, 2012-05-04
 
 * Added conversion of comments.
 * Added closing of issue for which the corresponding Trac ticket has been closed already.
-* Added validation of users issues are assigned to. They must have an active Github user. 
+* Added validation of users issues are assigned to. They must have an active Github user.
 
 Version 0.2, 2012-05-02
 
