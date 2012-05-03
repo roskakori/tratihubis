@@ -1,4 +1,4 @@
-"""
+'''
 Tratihubis converts Trac tickets to Github issues by using the following steps:
 
 1. The user manually exports the Trac tickets to convert to a CSV file.
@@ -19,10 +19,11 @@ Usage
 =====
 
 Information about Trac tickets to convert has to be provided in a CSV file. To obtain this CSV file, create a
-new Trac query using the SQL statement stored in
-`query_tickets.sql <https://github.com/roskakori/tratihubis/blob/master/query_tickets.sql>`_ and saving the
-result by clicking "Download in other formats: Comma-delimited Text" and choosing for example
-``/Users/me/mytool/tickets.csv`` as output file.
+new Trac queries using the SQL statement stored in
+`query_tickets.sql <https://github.com/roskakori/tratihubis/blob/master/query_tickets.sql>`_  and
+`query_comments.sql <https://github.com/roskakori/tratihubis/blob/master/query_comments.sql>`_.   Then
+execute the queries and save the results by clicking "Download in other formats: Comma-delimited Text" and
+choosing for example ``/Users/me/mytool/tickets.csv`` and ``/Users/me/mytool/comments.csv`` as output files.
 
 Next create a config file to describe how to login to Github and what to convert. For example, you could
 store the following in ``~/mytool/tratihubis.cfg``::
@@ -32,6 +33,7 @@ store the following in ``~/mytool/tratihubis.cfg``::
   password = secret
   repo = mytool
   tickets = /Users/me/mytool/tickets.csv
+  comments = /Users/me/mytool/comments.csv
 
 Then run::
 
@@ -66,13 +68,12 @@ Limitations
 Currently tratihubis only converts tickets with their descriptions and milestones. It also creates
 milestones as needed.
 
-Github issues get the same owner as the Trac ticket. This only works if the Trac user has the same name on
-Github. If this is not the case, manually edit the ``owner`` and ``reporter`` columns in the tickets CSV.
+Github issues and comments have the user specified in the config as author, even if a different user opened
+the original Trac ticket or wrote the original Trac comment.
 
 The following information is not converted:
 
 * Github issues remain open even if the Trac ticket has been closed.
-* Trac comments are discarded instead of converted to Github comments.
 * Trac ticket details on type and resolution are discarded instead of converted to Github labels.
 * Trac Wiki markup remains instead of being converted to Github Markdown.
 
@@ -90,6 +91,10 @@ Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under t
 Changes
 =======
 
+Version 0.3, 2012-05-03
+
+* Added conversion of comments.
+
 Version 0.2, 2012-05-02
 
 * Added config option ``users`` to map Trac users to Github users.
@@ -99,7 +104,7 @@ Version 0.2, 2012-05-02
 Version 0.1, 2012-05-01
 
 * Initial release.
-"""
+'''
 # Copyright (c) 2012, Thomas Aglassinger
 # All rights reserved.
 #
@@ -133,11 +138,12 @@ import csv
 import github
 import logging
 import optparse
+import os.path
 import sys
 
 _log = logging.getLogger('tratihubis')
 
-__version__ = "0.2"
+__version__ = "0.3"
 
 _SECTION = 'tratihubis'
 _OPTION_USERS = 'users'
@@ -150,6 +156,15 @@ class _ConfigError(Exception):
         assert option is not None
         assert message is not None
         Exception.__init__(self, u'cannot process option "%s" in section "%s": %s' % (_SECTION, option, message))
+
+
+class _CsvDataError(Exception):
+    def __init__(self, csvPath, rowIndex, message):
+        assert csvPath is not None
+        assert rowIndex is not None
+        assert rowIndex >= 0
+        assert message is not None
+        Exception.__init__(self, u'%s:%d: %s' % (os.path.basename(csvPath), rowIndex + 1, message))
 
 
 class _UTF8Recoder:
@@ -196,6 +211,16 @@ def _getConfigOption(config, name, required=True, defaultValue=None):
     return result
 
 
+def _shortened(text):
+    assert text is not None
+    THRESHOLD = 30
+    if len(text) > THRESHOLD:
+        result = text[:THRESHOLD] + '...'
+    else:
+        result = text
+    return result
+
+
 def _tracTicketMaps(ticketsCsvPath):
     """
     Sequence of maps where each items describes the relevant fields of each row from the tickets CSV exported
@@ -206,11 +231,11 @@ def _tracTicketMaps(ticketsCsvPath):
     with open(ticketsCsvPath, "rb") as  ticketCsvFile:
         csvReader = _UnicodeCsvReader(ticketCsvFile)
         hasReadHeader = False
-        for row in csvReader:
+        for rowIndex, row in enumerate(csvReader):
             columnCount = len(row)
             if columnCount != EXPECTED_COLUMN_COUNT:
-                # TODO: Add row number to error message.
-                raise ValueError(u'CSV row must have %d columns but has %d: %r' %
+                raise _CsvDataError(ticketsCsvPath, rowIndex,
+                        u'ticket row must have %d columns but has %d: %r' %
                         (EXPECTED_COLUMN_COUNT, columnCount, row))
             if hasReadHeader:
                 ticketMap = {
@@ -252,10 +277,42 @@ def _createIssueMap(repo):
     return result
 
 
-def migrateTickets(repo, ticketsCsvPath, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
+def _createTicketToCommentsMap(commentsCsvPath):
+    EXPECTED_COLUMN_COUNT = 4
+    result = {}
+    if commentsCsvPath is not None:
+        _log.info(u'read ticket comments from "%s"', commentsCsvPath)
+        with open(commentsCsvPath, "rb") as  commentsCsvFile:
+            csvReader = _UnicodeCsvReader(commentsCsvFile)
+            hasReadHeader = False
+            for rowIndex, row in enumerate(csvReader):
+                columnCount = len(row)
+                if columnCount != EXPECTED_COLUMN_COUNT:
+                    raise _CsvDataError(commentsCsvPath, rowIndex,
+                            u'comment row must have %d columns but has %d: %r' %
+                            (EXPECTED_COLUMN_COUNT, columnCount, row))
+                if hasReadHeader:
+                    commentMap = {
+                        'id': long(row[0]),
+                        'author': row[2],
+                        'body': row[3],
+                    }
+                    ticketId = commentMap['id']
+                    ticketComments = result.get(ticketId)
+                    if ticketComments is None:
+                        ticketComments = []
+                        result[ticketId] = ticketComments
+                    ticketComments.append(commentMap)
+                else:
+                    hasReadHeader = True
+    return result
+
+
+def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
     assert repo is not None
     assert ticketsCsvPath is not None
     assert userMapping is not None
+    tracTicketToCommentsMap = _createTicketToCommentsMap(commentsCsvPath)
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
     tracToGithubUserMap = _createTracToGithubUserMap(userMapping)
@@ -286,9 +343,20 @@ def migrateTickets(repo, ticketsCsvPath, firstTicketIdToConvert=1, lastTicketIdT
             _log.info(u'  owner=%s-->%s; milestone=%s (%d)', tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
             if not pretend:
                 if milestone is None:
-                    repo.create_issue(title, body, githubAssignee)
+                    issue = repo.create_issue(title, body, githubAssignee)
                 else:
-                    repo.create_issue(title, body, tracOwner, milestone.number)
+                    issue = repo.create_issue(title, body, tracOwner, milestone.number)
+            else:
+                # Clear ``issue`` to make possible bugs in ``pretend``logic apparent as soon as possible.
+                issue = None
+            commentsToAdd = tracTicketToCommentsMap.get(ticketId)
+            if commentsToAdd is not None:
+                for comment in commentsToAdd:
+                    commentBody = comment['body']
+                    _log.info(u'  add comment from %s: %r', comment['author'], _shortened(commentBody))
+                    if not pretend:
+                        assert issue is not None
+                        issue.create_comment(commentBody)
             supposedIssueId += 1
         else:
             _log.info(u'skip ticket #%d: %s', ticketId, title)
@@ -363,6 +431,7 @@ def main(argv=None):
         options, configPath = _parsedOptions(argv[1:])
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
+        commentsCsvPath = _getConfigOption(config, 'comments', False, None)
         password = _getConfigOption(config, 'password')
         repoName = _getConfigOption(config, 'repo')
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
@@ -374,9 +443,9 @@ def main(argv=None):
         hub = github.Github(user, password)
         _log.info('connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(repo, ticketsCsvPath, pretend=not options.really)
+        migrateTickets(repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=not options.really)
         exitCode = 0
-    except (EnvironmentError, OSError), error:
+    except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)
     except KeyboardInterrupt:
         _log.warning(u"interrupted by user")

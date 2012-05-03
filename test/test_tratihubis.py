@@ -55,7 +55,7 @@ class UserMapTest(unittest.TestCase):
 
 
 class TratihubisTest(unittest.TestCase):
-    def _testCanConvertTicketsCsv(self, ticketsCsvPath):
+    def _testCanConvertTicketsCsv(self, ticketsCsvPath, commentsCsvPath=None):
         config = ConfigParser.SafeConfigParser()
         config.read(_TEST_CONFIG_PATHS)
         if not config.has_section('tratihubis'):
@@ -67,10 +67,10 @@ class TratihubisTest(unittest.TestCase):
         userMapping = 'johndoe: jdoe78, *: roskakori'
         hub = github.Github(user, password)
         repo = hub.get_user().get_repo(repoName)
-        tratihubis.migrateTickets(repo, ticketsCsvPath, userMapping=userMapping, pretend=True)
+        tratihubis.migrateTickets(repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=True)
 
     def testCanConvertTestTicketsCsv(self):
-        self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'))
+        self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'), os.path.join('test', 'test_comments.csv'))
 
     def testCanConvertCutplaceTicketsCsv(self):
         self._testCanConvertTicketsCsv(os.path.join('test', 'cutplace_tickets.csv'))

@@ -1,0 +1,84 @@
+ticket,time,author,newvalue
+1,22:54:06Z+0000,roskakori,Implemented with changeset [309].
+3,23:07:42Z+0000,roskakori,Implemented with changeset [288].
+4,22:35:25Z+0000,roskakori,Implemented with changeset [308] and several other changesets before that.
+5,10:56:14Z+0000,roskakori,Implemented with changeset [250].
+6,04:49:01Z+0000,roskakori,Implemented with changeset [317].
+7,21:58:56Z+0000,roskakori,"Won't do that, sphinx offers much better possibilities especially when it comes to test source code examples. This would be a royal PITA if the docs are stored in the Wiki using (though in theory you could somehow run doctests on the Wiki too if you invest enough time and effort and don't mind you have to be online to do it)."
+8,18:40:57Z+0000,roskakori,Fixed with change [217].
+9,12:06:14Z+0000,roskakori,Fixed with changeset [243].
+11,15:22:05Z+0000,roskakori,Most of the work has already been done by nnrcschmidt. Thanks!
+11,22:37:25Z+0000,roskakori,Implemented with changeset [308] and several others before that.
+12,22:42:02Z+0000,roskakori,"Current state:
+
+>  * get rid of build.xml
+
+Partially done, but still some work left.
+
+>  * get rid of !DocBook, see ticket #11
+
+Done.
+
+>  * get rid of XSL transformation of version.xml
+
+Done.
+"
+12,19:36:17Z+0000,roskakori,"End result:
+
+> * get rid of build.xml
+
+Sticking to ant because:
+
+  1. Adding ant tasks usually is easier then adding commands to ``setup.py``.
+  1. Jenkins integration is easier with ant.
+
+Because of that, some commands for ``setup.py`` have already been removed and replaced by ant targets.
+
+> * get rid of !DocBook, see ticket #11
+
+Done.
+
+> * get rid of XSL transformation of version.xml
+
+Done."
+13,21:12:51Z+0000,roskakori,Finished with change [271].
+14,19:03:46Z+0000,roskakori,Implemented with changeset [290].
+15,19:03:56Z+0000,roskakori,Implemented with changeset [290].
+17,18:53:48Z+0000,roskakori,Implemented with changeset [335].
+20,20:47:06Z+0000,roskakori,Implemented with r435.
+21,15:12:11Z+0000,roskakori,"Note: invalid, seems to work now."
+21,07:18:09Z+0000,roskakori,"Bug still existed. Console revealed:
+{{{
+UnicodeWarning: Unicode equal comparison failed to convert both arguments to Unicode - interpreting them as being unequal
+}}}
+
+It should be fixed now by comparing the header with a list of integers instead of a string."
+22,17:59:54Z+0000,roskakori,included as of version 0.6.2.
+24,20:19:37Z+0000,roskakori,Available as of version 0.6.1.
+25,21:52:20Z+0000,roskakori,Implemented with r425.
+30,19:33:03Z+0000,roskakori,Fixed quite a while ago by removing optional parameter ``validationListener`` from ``validate()``.
+31,23:39:56Z+0000,roskakori,Current status: test for GET-based queries works.
+40,19:39:45Z+0000,roskakori,"See development.rst, section ""Set up Jenkins""."
+41,00:19:17Z+0000,roskakori,"Should be easy to do, scheduled for 0.7.1."
+41,04:35:19Z+0000,roskakori,"Implemented, to be released with version 0.7.1."
+42,00:24:19Z+0000,roskakori,"I can see your point, the location currently reported is confusing.
+
+However, using a dummy location like R4C* doesn't seem particular helpful either because tools parsing the location in order to position the cursor will have to consider this syntax too.
+
+I'm currently tending to let a failed row check report the error in the 1st column, for example R4C1. This would position the cursor at the beginning of the row, where the user can start his analysis."
+42,15:49:13Z+0000,roskakori,Implemented as described in comment:2 and scheduled for release with version 0.7.1.
+43,21:39:24Z+0000,roskakori,"The `length` parameter describes the number of characters the field must have.
+
+In order to change the valid range of an `IntegerField`, use the `rule` parameter.
+
+Example:
+
+{{{
+#!python
+integerField = fields.IntegerFieldFormat('testField', False, length=None, rule='0:9999999999', data.createDataFormat(data.FORMAT_CSV)
+print integerField.validated('9999125515')
+}}}
+
+So the existing code should already be correct."
+43,02:43:40Z+0000,rufus-devrel,Thanks.  Fix to user is confirmed :-)
+44,05:57:22Z+0000,roskakori,See --plugins.
