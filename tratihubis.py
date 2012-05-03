@@ -148,7 +148,8 @@ __version__ = "0.3"
 _SECTION = 'tratihubis'
 _OPTION_USERS = 'users'
 
-_FakeMilestone = collections.namedtuple('FakeMilestone', ['number', 'title'])
+_FakeMilestone = collections.namedtuple('_FakeMilestone', ['number', 'title'])
+_FakeIssue = collections.namedtuple('_FakeIssue', ['number', 'title', 'body', 'state'])
 
 
 class _ConfigError(Exception):
@@ -316,7 +317,7 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
     tracToGithubUserMap = _createTracToGithubUserMap(userMapping)
-    supposedIssueId = 1 + len(existingIssues)
+    fakeIssueId = 1 + len(existingIssues)
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
         title = ticketMap['summary']
@@ -339,25 +340,26 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
             else:
                 milestone = None
                 milestoneNumber = 0
-            _log.info(u"convert ticket #%d to issue #%d: %s", ticketId, supposedIssueId, title)
-            _log.info(u'  owner=%s-->%s; milestone=%s (%d)', tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
+            _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
             if not pretend:
                 if milestone is None:
                     issue = repo.create_issue(title, body, githubAssignee)
                 else:
                     issue = repo.create_issue(title, body, tracOwner, milestone.number)
             else:
-                # Clear ``issue`` to make possible bugs in ``pretend``logic apparent as soon as possible.
-                issue = None
+                issue = _FakeIssue(fakeIssueId, title, body, 'open')
+                fakeIssueId += 1
+            _log.info(u'  issue #%s: owner=%s-->%s; milestone=%s (%d)',
+                    issue.number, tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
                     commentBody = comment['body']
-                    _log.info(u'  add comment from %s: %r', comment['author'], _shortened(commentBody))
+                    commentAuthor = _githubUserFor(tracToGithubUserMap, comment['author'])
+                    _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
                         assert issue is not None
                         issue.create_comment(commentBody)
-            supposedIssueId += 1
         else:
             _log.info(u'skip ticket #%d: %s', ticketId, title)
 
@@ -377,9 +379,9 @@ def _parsedOptions(arguments):
                       help="log all actions performed in console")
     (options, others) = parser.parse_args(arguments)
     if len(others) == 0:
-        parser.error("CONFIGFILE must be specified")
+        parser.error(u"CONFIGFILE must be specified")
     elif len(others) > 1:
-        parser.error("unknown options must be removed: %s" % others[2:])
+        parser.error(u"unknown options must be removed: %s" % others[1:])
     if options.verbose:
         _log.setLevel(logging.DEBUG)
 
@@ -416,7 +418,7 @@ def _githubUserFor(tracToGithubUserMap, tracUser):
     if result is None:
         result = tracToGithubUserMap.get('*')
         if result is None:
-            raise _ConfigError(_OPTION_USERS, 'Trac user "%s" must be mapped to a Github user')
+            raise _ConfigError(_OPTION_USERS, u'Trac user "%s" must be mapped to a Github user')
     if result == '*':
         result = tracUser
     return result
@@ -439,9 +441,9 @@ def main(argv=None):
         userMapping = _getConfigOption(config, 'users', False, '*:*')
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
-        _log.info('log on to github as user "%s"', user)
+        _log.info(u'log on to github as user "%s"', user)
         hub = github.Github(user, password)
-        _log.info('connect to github repo "%s"', repoName)
+        _log.info(u'connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
         migrateTickets(repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=not options.really)
         exitCode = 0
