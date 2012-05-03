@@ -90,10 +90,11 @@ Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under t
 Changes
 =======
 
-Version 0.3, 2012-05-03
+Version 0.3, 2012-05-04
 
 * Added conversion of comments.
 * Added closing of issue for which the corresponding Trac ticket has been closed already.
+* Added validation of users issues are assigned to. They must have an active Github user. 
 
 Version 0.2, 2012-05-02
 
@@ -148,6 +149,8 @@ __version__ = "0.3"
 _SECTION = 'tratihubis'
 _OPTION_USERS = 'users'
 
+_validatedGithubUsers = set()
+
 _FakeMilestone = collections.namedtuple('_FakeMilestone', ['number', 'title'])
 _FakeIssue = collections.namedtuple('_FakeIssue', ['number', 'title', 'body', 'state'])
 
@@ -156,7 +159,7 @@ class _ConfigError(Exception):
     def __init__(self, option, message):
         assert option is not None
         assert message is not None
-        Exception.__init__(self, u'cannot process option "%s" in section "%s": %s' % (_SECTION, option, message))
+        Exception.__init__(self, u'cannot process config option "%s" in section [%s]: %s' % (option, _SECTION, message))
 
 
 class _CsvDataError(Exception):
@@ -256,24 +259,27 @@ def _tracTicketMaps(ticketsCsvPath):
 
 
 def _createMilestoneMap(repo):
+    def addMilestones(targetMap, state):
+        for milestone in repo.get_milestones(state=state):
+            _log.debug(u'  %d: %s', milestone.number, milestone.title)
+            targetMap[milestone.title] = milestone
     result = {}
     _log.info(u'analyze existing milestones')
-    for milestone in repo.get_milestones():
-        result[milestone.title] = milestone
-        _log.debug(u'  %d: %s', milestone.number, milestone.title)
+    addMilestones(result, 'open')
+    addMilestones(result, 'closed')
     _log.info(u'  found %d milestones', len(result))
     return result
 
 
 def _createIssueMap(repo):
-    def _addIssues(targetMap, state):
+    def addIssues(targetMap, state):
         for issue in repo.get_issues(state=state):
             _log.debug(u'  %s: (%s) %s', issue.number, issue.state, issue.title)
             targetMap[issue.number] = issue
     result = {}
     _log.info(u'analyze existing issues')
-    _addIssues(result, 'open')
-    _addIssues(result, 'closed')
+    addIssues(result, 'open')
+    addIssues(result, 'closed')
     _log.info(u'  found %d issues', len(result))
     return result
 
@@ -309,14 +315,15 @@ def _createTicketToCommentsMap(commentsCsvPath):
     return result
 
 
-def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
+def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
+    assert hub is not None
     assert repo is not None
     assert ticketsCsvPath is not None
     assert userMapping is not None
     tracTicketToCommentsMap = _createTicketToCommentsMap(commentsCsvPath)
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
-    tracToGithubUserMap = _createTracToGithubUserMap(userMapping)
+    tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping)
     fakeIssueId = 1 + len(existingIssues)
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
@@ -325,11 +332,12 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
             tracOwner = ticketMap['owner'].strip()
-            githubAssignee = _githubUserFor(tracToGithubUserMap, tracOwner)
+            githubAssignee = _githubUserFor(hub, tracToGithubUserMap, tracOwner)
             milestoneTitle = ticketMap['milestone'].strip()
             if len(milestoneTitle) != 0:
                 if milestoneTitle not in existingMilestones:
                     _log.info(u'add milestone: %s', milestoneTitle)
+                    print existingMilestones
                     if not pretend:
                         newMilestone = repo.create_milestone(milestoneTitle)
                     else:
@@ -345,7 +353,7 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
                 if milestone is None:
                     issue = repo.create_issue(title, body, githubAssignee)
                 else:
-                    issue = repo.create_issue(title, body, tracOwner, milestone.number)
+                    issue = repo.create_issue(title, body, githubAssignee, milestone.number)
             else:
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
@@ -355,7 +363,7 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
                     commentBody = comment['body']
-                    commentAuthor = _githubUserFor(tracToGithubUserMap, comment['author'])
+                    commentAuthor = _githubUserFor(repo, tracToGithubUserMap, comment['author'], False)
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
                         assert issue is not None
@@ -394,7 +402,23 @@ def _parsedOptions(arguments):
     return options, configPath
 
 
-def _createTracToGithubUserMap(definition):
+def _validateGithubUser(hub, tracUser, githubUser):
+    assert hub is not None
+    assert tracUser is not None
+    assert githubUser is not None
+    if githubUser not in _validatedGithubUsers:
+        try:
+            _log.debug(u'  check for Github user "%s"', githubUser)
+            hub.get_user(githubUser)
+        except:
+            # FIXME: After PyGithub API raises a predictable error, use  "except WahteverException".
+            raise _ConfigError(_OPTION_USERS,
+                    u'Trac user "%s" must be mapped to an existing Github user instead of "%s"' \
+                    % (tracUser, githubUser))
+        _validatedGithubUsers.add(githubUser)
+
+
+def _createTracToGithubUserMap(hub, definition):
     result = {}
     for mapping in definition.split(','):
         words = [word.strip() for word in mapping.split(':')]
@@ -412,10 +436,12 @@ def _createTracToGithubUserMap(definition):
                         u'Trac user "%s" must be mapped to only one Github user instead of "%s" and "%s"' \
                          % (tracUser, existingMappedGithubUser, githubUser))
             result[tracUser] = githubUser
+            if githubUser != '*':
+                _validateGithubUser(hub, tracUser, githubUser)
     return result
 
 
-def _githubUserFor(tracToGithubUserMap, tracUser):
+def _githubUserFor(hub, tracToGithubUserMap, tracUser, validate=True):
     assert tracToGithubUserMap is not None
     assert tracUser is not None
     result = tracToGithubUserMap.get(tracUser)
@@ -425,6 +451,8 @@ def _githubUserFor(tracToGithubUserMap, tracUser):
             raise _ConfigError(_OPTION_USERS, u'Trac user "%s" must be mapped to a Github user')
     if result == '*':
         result = tracUser
+    if validate:
+        _validateGithubUser(hub, tracUser, result)
     return result
 
 
@@ -449,7 +477,7 @@ def main(argv=None):
         hub = github.Github(user, password)
         _log.info(u'connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=not options.really)
+        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=not options.really)
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)

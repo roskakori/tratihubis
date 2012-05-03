@@ -41,21 +41,11 @@ _TEST_CONFIG_PATHS = [
 ]
 
 
-class UserMapTest(unittest.TestCase):
-    def testCanCreateValidUserMap(self):
-        userMap = tratihubis._createTracToGithubUserMap('hugo: sepp, *: roskakori')
-        self.assertEqual(userMap, {'*': 'roskakori', 'hugo': 'sepp'})
-        userMap = tratihubis._createTracToGithubUserMap('*:*')
-        self.assertEqual(userMap, {'*': '*'})
-        userMap = tratihubis._createTracToGithubUserMap(' * : * ')
-        self.assertEqual(userMap, {'*': '*'})
-
-    def testFailsOnDuplicateUser(self):
-        self.assertRaises(tratihubis._ConfigError, tratihubis._createTracToGithubUserMap, 'hugo: sepp, hugo: resi')
-
-
-class TratihubisTest(unittest.TestCase):
-    def _testCanConvertTicketsCsv(self, ticketsCsvPath, commentsCsvPath=None):
+class _HubbedTest(unittest.TestCase):
+    '''
+    Like `unittest.TestCase` but with a `setUp()` that connects to Github and offers a ``hub`` property.
+    '''
+    def setUp(self):
         config = ConfigParser.SafeConfigParser()
         config.read(_TEST_CONFIG_PATHS)
         if not config.has_section('tratihubis'):
@@ -63,11 +53,29 @@ class TratihubisTest(unittest.TestCase):
                     + 'in one of the following files: %s' % _TEST_CONFIG_PATHS)
         password = config.get('tratihubis', 'password')
         user = config.get('tratihubis', 'user')
+        self.hub = github.Github(user, password)
+
+
+class UserMapTest(_HubbedTest):
+    def testCanCreateValidUserMap(self):
+        userMap = tratihubis._createTracToGithubUserMap(self.hub, 'hugo: sepp, *: roskakori')
+        self.assertEqual(userMap, {'*': 'roskakori', 'hugo': 'sepp'})
+        userMap = tratihubis._createTracToGithubUserMap(self.hub, '*:*')
+        self.assertEqual(userMap, {'*': '*'})
+        userMap = tratihubis._createTracToGithubUserMap(self.hub, ' * : * ')
+        self.assertEqual(userMap, {'*': '*'})
+
+    def testFailsOnDuplicateUser(self):
+        self.assertRaises(tratihubis._ConfigError, tratihubis._createTracToGithubUserMap, \
+                self.hub, 'hugo: sepp, hugo: resi')
+
+
+class TratihubisTest(_HubbedTest):
+    def _testCanConvertTicketsCsv(self, ticketsCsvPath, commentsCsvPath=None):
         repoName = 'tratihubis'
-        userMapping = 'johndoe: jdoe78, *: roskakori'
-        hub = github.Github(user, password)
-        repo = hub.get_user().get_repo(repoName)
-        tratihubis.migrateTickets(repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=True)
+        userMapping = 'johndoe: roskakori, *: roskakori'
+        repo = self.hub.get_user().get_repo(repoName)
+        tratihubis.migrateTickets(self.hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=True)
 
     def testCanConvertTestTicketsCsv(self):
         self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'), os.path.join('test', 'test_comments.csv'))
@@ -78,5 +86,5 @@ class TratihubisTest(unittest.TestCase):
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     unittest.main()
