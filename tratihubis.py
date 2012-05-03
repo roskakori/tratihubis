@@ -73,7 +73,6 @@ the original Trac ticket or wrote the original Trac comment.
 
 The following information is not converted:
 
-* Github issues remain open even if the Trac ticket has been closed.
 * Trac ticket details on type and resolution are discarded instead of converted to Github labels.
 * Trac Wiki markup remains instead of being converted to Github Markdown.
 
@@ -94,6 +93,7 @@ Changes
 Version 0.3, 2012-05-03
 
 * Added conversion of comments.
+* Added closing of issue for which the corresponding Trac ticket has been closed already.
 
 Version 0.2, 2012-05-02
 
@@ -360,6 +360,10 @@ def migrateTickets(repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToCo
                     if not pretend:
                         assert issue is not None
                         issue.create_comment(commentBody)
+            if ticketMap['status'] == 'closed':
+                _log.info(u'  close issue')
+                if not pretend:
+                    issue.edit(state='closed')
         else:
             _log.info(u'skip ticket #%d: %s', ticketId, title)
 
