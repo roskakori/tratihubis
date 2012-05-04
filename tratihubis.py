@@ -50,6 +50,9 @@ Be aware that Github issues and milestones cannot be deleted in case you mess up
 remove the whole repository and start anew. So make sure that tratihubis does what you want before you
 enable ``--really``.
 
+Mapping users
+-------------
+
 In case the Trac users have different user names on Github, you can specify a mapping. For example::
 
    users = johndoe: jdoe78, *: me
@@ -61,23 +64,66 @@ The default value is::
 
 This maps every Trac user to a Github user with the same name.
 
+Mapping labels
+--------------
+
+Github labels somewhat mimic the functionality Trac stores in the ``type`` and ``resolution`` field of
+tickets. By default, Github supports the following labels:
+
+* bug
+* duplicate
+* enhancement
+* invalid
+* question
+* wontfix
+
+Trac on the other hand has a ``type`` field which by default can be:
+
+* bug
+* enhancement
+* task
+
+Furthermore closed Trac tickets have a ``resolution`` which, among others, can be:
+
+* duplicate
+* invalid
+* wontfix
+
+The ``labels`` config option allows to map Trac fields to Github labels. For example::
+
+  labels = type=defect: bug, type=enhancement: enhancement, resolution=wontfix: wontfix
+
+Here, ``labels`` is a comma separated list of mappings taking the form
+``<trac-field>=<trac-value>:<github-label>``.
+
+In case types or labels contain other characters than ASCII letters, digits and underscore (_), put them
+between quotes:
+
+  labels = type="software defect": bug
+
 
 Limitations
 ===========
 
-Currently tratihubis only converts tickets with their descriptions and milestones. It also creates
-milestones as needed.
+Milestone without any tickets are skipped.
+
+Milestones lack a due date.
 
 Github issues and comments have the user specified in the config as author, even if a different user opened
 the original Trac ticket or wrote the original Trac comment.
 
-The following information is not converted:
+Issues and comments have the current time as time stamp instead if time from Trac.
 
-* Trac ticket details on type and resolution are discarded instead of converted to Github labels.
-* Trac Wiki markup remains instead of being converted to Github Markdown.
+Trac Wiki markup remains instead of being converted to Github markdown.
 
-If you want to implement any of these features, create a fork and open a pull request at
-https://github.com/roskakori/tratihubis.
+
+Support
+=======
+
+In case of questions and problems, open an issue at <https://github.com/roskakori/tratihubis/issues>.
+
+To obtain the source code or create your own fork to implement fixes or improvements, visit
+<https://github.com/roskakori/tratihubis>.
 
 
 License
@@ -92,7 +138,11 @@ Changes
 
 Version 0.3, 2012-05-04
 
-* Added conversion of comments.
+* Added config option ``labels`` to map Trac status and resolution to  Github labels.
+
+Version 0.3, 2012-05-03
+
+* Added config option ``comments`` to convert Trac ticket comments.
 * Added closing of issue for which the corresponding Trac ticket has been closed already.
 * Added validation of users issues are assigned to. They must have an active Github user.
 
@@ -140,13 +190,17 @@ import github
 import logging
 import optparse
 import os.path
+import StringIO
 import sys
+import token
+import tokenize
 
 _log = logging.getLogger('tratihubis')
 
-__version__ = "0.3"
+__version__ = "0.4"
 
 _SECTION = 'tratihubis'
+_OPTION_LABELS = 'labels'
 _OPTION_USERS = 'users'
 
 _validatedGithubUsers = set()
@@ -201,6 +255,95 @@ class _UnicodeCsvReader:
 
     def __iter__(self):
         return self
+
+
+class _LabelTransformations(object):
+    def __init__(self, repo, definition):
+        assert repo is not None
+
+        self._transformations = []
+        self._labelMap = {}
+        if definition:
+            self._buildLabelMap(repo)
+            self._buildTransformations(repo, definition)
+
+    def _buildLabelMap(self, repo):
+        assert repo is not None
+
+        _log.info(u'analyze existing labels')
+        self._labelMap = {}
+        for label in repo.get_labels():
+            _log.debug(u'  found label "%s"', label.name)
+            self._labelMap[label.name] = label
+        _log.info(u'  found %d labels', len(self._labelMap))
+
+    def _buildTransformations(self, repo, definition):
+        assert repo is not None
+        assert definition is not None
+
+        STATE_AT_TRAC_FIELD = 'f'
+        STATE_AT_COMPARISON_OPERATOR = '='
+        STATE_AT_TRAC_VALUE = 'v'
+        STATE_AT_COLON = ':'
+        STATE_AT_LABEL = 'l'
+        STATE_AT_COMMA = ','
+
+        self._transformations = []
+        state = STATE_AT_TRAC_FIELD
+        for tokenType, tokenText, _, _, _ in tokenize.generate_tokens(StringIO.StringIO(definition).readline):
+            if tokenType == token.STRING:
+                tokenText = tokenText[1:len(tokenText) - 1]
+            if state == STATE_AT_TRAC_FIELD:
+                tracField = tokenText
+                tracValue = None
+                labelValue = None
+                state = STATE_AT_COMPARISON_OPERATOR
+            elif state == STATE_AT_COMPARISON_OPERATOR:
+                if tokenText != '=':
+                    raise _ConfigError(_OPTION_LABELS, \
+                            u'Trac field "%s" must be followed by \'=\' instead of %r' \
+                            % (tracField, tokenText))
+                state = STATE_AT_TRAC_VALUE
+            elif state == STATE_AT_TRAC_VALUE:
+                tracValue = tokenText
+                state = STATE_AT_COLON
+            elif state == STATE_AT_COLON:
+                if tokenText != ':':
+                    raise _ConfigError(_OPTION_LABELS, \
+                            u'value for comparison "%s" with Trac field "%s" must be followed by \':\' instead of %r' \
+                            % (tracValue, tracField, tokenText))
+                state = STATE_AT_LABEL
+            elif state == STATE_AT_LABEL:
+                labelValue = tokenText
+                if not labelValue in self._labelMap:
+                    raise _ConfigError(_OPTION_LABELS, \
+                            u'unknown label "%s" must be replaced by one of: %s' \
+                            % (labelValue, sorted(self._labelMap.keys())))
+                self._transformations.append((tracField, tracValue, labelValue))
+                state = STATE_AT_COMMA
+            elif state == STATE_AT_COMMA:
+                if (tokenType != token.ENDMARKER) and (tokenText != ','):
+                    raise _ConfigError(_OPTION_LABELS, \
+                            u'label transformation for Trac field "%s" must end with \',\' instead of %r' \
+                            % (tracField, tokenText))
+                state = STATE_AT_TRAC_FIELD
+            else:
+                assert False, u'state=%r' % state
+
+    def labelFor(self, tracField, tracValue):
+        assert tracField
+        assert tracValue is not None
+        result = None
+        transformationIndex = 0
+        while (result is None) and (transformationIndex < len(self._transformations)):
+            transformedField, transformedValueToCompareWith, transformedLabel = \
+                    self._transformations[transformationIndex]
+            if (transformedField == tracField) and (transformedValueToCompareWith == tracValue):
+                assert transformedLabel in self._labelMap
+                result = self._labelMap[transformedLabel]
+            else:
+                transformationIndex += 1
+        return result
 
 
 def _getConfigOption(config, name, required=True, defaultValue=None):
@@ -315,15 +458,25 @@ def _createTicketToCommentsMap(commentsCsvPath):
     return result
 
 
-def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, userMapping="*:*", pretend=True):
+def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, labelMapping=None, userMapping="*:*", pretend=True):
     assert hub is not None
     assert repo is not None
     assert ticketsCsvPath is not None
     assert userMapping is not None
+
     tracTicketToCommentsMap = _createTicketToCommentsMap(commentsCsvPath)
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
     tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping)
+    labelTransformations = _LabelTransformations(repo, labelMapping)
+
+    def possiblyAddLabel(labels, tracField, tracValue):
+        label = labelTransformations.labelFor(tracField, tracValue)
+        if label is not None:
+            _log.info('  add label %s', label.name)
+            if not pretend:
+                labels.append(label.name)
+
     fakeIssueId = 1 + len(existingIssues)
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
@@ -359,6 +512,11 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketI
                 fakeIssueId += 1
             _log.info(u'  issue #%s: owner=%s-->%s; milestone=%s (%d)',
                     issue.number, tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
+            labels = []
+            possiblyAddLabel(labels, 'type', ticketMap['type'])
+            possiblyAddLabel(labels, 'resolution', ticketMap['resolution'])
+            if len(labels) > 0:
+                issue.edit(labels=labels)
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
@@ -465,7 +623,8 @@ def main(argv=None):
         options, configPath = _parsedOptions(argv[1:])
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
-        commentsCsvPath = _getConfigOption(config, 'comments', False, None)
+        commentsCsvPath = _getConfigOption(config, 'comments', False)
+        labelMapping = _getConfigOption(config, 'labels', False)
         password = _getConfigOption(config, 'password')
         repoName = _getConfigOption(config, 'repo')
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
@@ -477,7 +636,8 @@ def main(argv=None):
         hub = github.Github(user, password)
         _log.info(u'connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=not options.really)
+        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping,
+                labelMapping=labelMapping, pretend=not options.really)
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)

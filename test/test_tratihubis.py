@@ -56,6 +56,42 @@ class _HubbedTest(unittest.TestCase):
         self.hub = github.Github(user, password)
 
 
+class _RepoedTest(_HubbedTest):
+    '''
+    Like `unittest.TestCase` but with a `setUp()` that connects to Github and offers a ``hub`` and ``repo``
+    property.
+    '''
+    def setUp(self):
+        super(_RepoedTest, self).setUp()
+        self.repo = self.hub.get_user().get_repo('tratihubis')
+
+
+class LabelTransformationTest(_RepoedTest):
+    def testCanCreateSingleTransformation(self):
+        transformations = tratihubis._LabelTransformations(self.repo, 'type=defect: bug')
+        self.assertEqual(transformations._transformations, [('type', 'defect', 'bug')])
+
+    def testCanCreateMultipleTransformation(self):
+        transformations = tratihubis._LabelTransformations(self.repo,
+                'type=defect: bug, type=enhancement: enhancement, resolution=wontfix: wontfix')
+        self.assertEqual(transformations._transformations, [
+                ('type', 'defect', 'bug'),
+                ('type', 'enhancement', 'enhancement'),
+                ('resolution', 'wontfix', 'wontfix')
+        ])
+
+    def testCanCreateTransformationWithQuotedValue(self):
+        transformations = tratihubis._LabelTransformations(self.repo, 'type="software defect": bug')
+        self.assertEqual(transformations._transformations, [('type', 'software defect', 'bug')])
+
+    def testFailsOnNonExistentLabel(self):
+        try:
+            tratihubis._LabelTransformations(self.repo, 'type=defect: no_such_label')
+            self.fail()
+        except tratihubis._ConfigError, error:
+            self.assertTrue('unknown label' in unicode(error))
+
+
 class UserMapTest(_HubbedTest):
     def testCanCreateValidUserMap(self):
         userMap = tratihubis._createTracToGithubUserMap(self.hub, 'hugo: sepp, *: roskakori')
@@ -70,12 +106,12 @@ class UserMapTest(_HubbedTest):
                 self.hub, 'hugo: sepp, hugo: resi')
 
 
-class TratihubisTest(_HubbedTest):
+class TratihubisTest(_RepoedTest):
     def _testCanConvertTicketsCsv(self, ticketsCsvPath, commentsCsvPath=None):
-        repoName = 'tratihubis'
+        labelMapping = 'type=defect: bug, type=enhancement: enhancement, resolution=wontfix: wontfix'
         userMapping = 'johndoe: roskakori, *: roskakori'
-        repo = self.hub.get_user().get_repo(repoName)
-        tratihubis.migrateTickets(self.hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping, pretend=True)
+        tratihubis.migrateTickets(self.hub, self.repo, ticketsCsvPath, commentsCsvPath,
+                userMapping=userMapping, labelMapping=labelMapping, pretend=True)
 
     def testCanConvertTestTicketsCsv(self):
         self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'), os.path.join('test', 'test_comments.csv'))
