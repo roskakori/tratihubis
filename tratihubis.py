@@ -97,7 +97,7 @@ Here, ``labels`` is a comma separated list of mappings taking the form
 ``<trac-field>=<trac-value>:<github-label>``.
 
 In case types or labels contain other characters than ASCII letters, digits and underscore (_), put them
-between quotes:
+between quotes::
 
   labels = type="software defect": bug
 
@@ -105,16 +105,17 @@ between quotes:
 Limitations
 ===========
 
-Milestone without any tickets are skipped.
+The author of Github issues and comments always is the user specified in the config, even if a different
+user opened the original Trac ticket or wrote the original Trac comment.
 
-Milestones lack a due date.
+Github issues and comments have the current time as time stamp instead if time from Trac.
 
-Github issues and comments have the user specified in the config as author, even if a different user opened
-the original Trac ticket or wrote the original Trac comment.
+Github issue descriptions contains the raw Trac Wiki markup, there is no translation to Github markdown.
 
-Issues and comments have the current time as time stamp instead if time from Trac.
+The due date of Trac milestones is not migrated to Github milestones, so when the conversion is done, you
+have to set it manually.
 
-Trac Wiki markup remains instead of being converted to Github markdown.
+Trac Milestone without any tickets are not converted to Github milestone.
 
 
 Support
@@ -136,7 +137,7 @@ Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under t
 Changes
 =======
 
-Version 0.3, 2012-05-04
+Version 0.4, 2012-05-04
 
 * Added config option ``labels`` to map Trac status and resolution to  Github labels.
 
