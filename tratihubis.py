@@ -487,6 +487,7 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketI
             body = ticketMap['description']
             tracOwner = ticketMap['owner'].strip()
             githubAssignee = _githubUserFor(hub, tracToGithubUserMap, tracOwner)
+            githubAssignee = hub.get_user( githubAssignee )
             milestoneTitle = ticketMap['milestone'].strip()
             if len(milestoneTitle) != 0:
                 if milestoneTitle not in existingMilestones:
@@ -507,7 +508,7 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketI
                 if milestone is None:
                     issue = repo.create_issue(title, body, githubAssignee)
                 else:
-                    issue = repo.create_issue(title, body, githubAssignee, milestone.number)
+                    issue = repo.create_issue(title, body, githubAssignee, milestone)
             else:
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
