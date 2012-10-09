@@ -195,6 +195,7 @@ import StringIO
 import sys
 import token
 import tokenize
+import datetime
 
 _log = logging.getLogger('tratihubis')
 
@@ -374,7 +375,7 @@ def _tracTicketMaps(ticketsCsvPath):
     Sequence of maps where each items describes the relevant fields of each row from the tickets CSV exported
     from Trac.
     """
-    EXPECTED_COLUMN_COUNT = 9
+    EXPECTED_COLUMN_COUNT = 11
     _log.info(u'read ticket details from "%s"', ticketsCsvPath)
     with open(ticketsCsvPath, "rb") as  ticketCsvFile:
         csvReader = _UnicodeCsvReader(ticketCsvFile)
@@ -396,6 +397,8 @@ def _tracTicketMaps(ticketsCsvPath):
                     'resolution': row[6],
                     'summary': row[7],
                     'description': row[8],
+                    'createdtime' : datetime.datetime.fromtimestamp( long(row[9])),
+                    'modifiedtime' : datetime.datetime.fromtimestamp( long(row[10])),
                 }
                 yield ticketMap
             else:
@@ -458,14 +461,50 @@ def _createTicketToCommentsMap(commentsCsvPath):
                     hasReadHeader = True
     return result
 
+def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
+    EXPECTED_COLUMN_COUNT = 4
+    result = {}
+    if attachmentsCsvPath is not None:
+        _log.info(u'read attachements from "%s"', attachmentsCsvPath )
 
-def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, labelMapping=None, userMapping="*:*", pretend=True):
+    if attachmentsCsvPath is not None and attachmentsPrefix is None:
+        _log.error(u'attachments csv path specified but attachmentsprefix is not\n' )
+        return result
+
+    with open(attachmentsCsvPath, "rb") as attachmentsCsvFile:
+        attachmentsReader = _UnicodeCsvReader(attachmentsCsvFile)
+        hasReadHeader = False
+        for rowIndex, row in enumerate(attachmentsReader):
+            columnCount = len(row)
+            if columnCount != EXPECTED_COLUMN_COUNT:
+                raise _CsvDataError(attachmentsCsvPath, rowIndex, 
+                    u'attachment row must have %d columns but has %d: %r' %
+                    (EXPECTED_COLUMN_COUNT, columnCount, row))
+            if hasReadHeader:
+                attachmentMap = {
+                    'id' : long(row[0]),
+                    'author' : row[3],
+                    'filename' : row[1],
+                    'date' : datetime.datetime.fromtimestamp( long(row[2] ) ),
+                    'fullpath' : u'%s/%s/%s' % ( attachmentsPrefix, row[0], row[1] ),
+                }
+                if not attachmentMap['id'] in result:
+                    result[ attachmentMap['id'] ] = [ attachmentMap ];
+                else: 
+                    result[ attachmentMap['id'] ].append( attachmentMap );
+            else: 
+                hasReadHeader = True
+               
+    return result
+
+def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsCsvPath=None, firstTicketIdToConvert=1, lastTicketIdToConvert=0, labelMapping=None, userMapping="*:*", attachmentsPrefix=None, pretend=True):
     assert hub is not None
     assert repo is not None
     assert ticketsCsvPath is not None
     assert userMapping is not None
 
     tracTicketToCommentsMap = _createTicketToCommentsMap(commentsCsvPath)
+    tracTicketToAttachmentsMap = _createTicketsToAttachmentsMap( attachmentsCsvPath, attachmentsPrefix )
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
     tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping)
@@ -513,12 +552,27 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, firstTicketI
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
             _log.info(u'  issue #%s: owner=%s-->%s; milestone=%s (%d)',
-                    issue.number, tracOwner, githubAssignee, milestoneTitle, milestoneNumber)
+                    issue.number, tracOwner, githubAssignee.name, milestoneTitle, milestoneNumber)
             labels = []
             possiblyAddLabel(labels, 'type', ticketMap['type'])
             possiblyAddLabel(labels, 'resolution', ticketMap['resolution'])
             if len(labels) > 0:
                 issue.edit(labels=labels)
+
+            legacyInfo = u"Imported from trac issue %d.  Created by %s on %s, last modified: %s\n" \
+                         % ( ticketId, ticketMap['reporter'], ticketMap['createdtime'].isoformat(), ticketMap['modifiedtime'].isoformat() )
+            attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
+            if attachmentsToAdd is not None:
+                for attachment in attachmentsToAdd:
+                    attachmentAuthor = _githubUserFor( repo, tracToGithubUserMap, attachment['author'], False )
+                    legacyInfo += u"* %s attached [%s](%s) on %s\n"  \
+                        % ( attachmentAuthor, attachment['filename'], attachment['fullpath'], attachment['date'] )
+                _log.info(u'  add attachmentcomment %r', _shortened(legacyInfo))
+            
+            if not pretend:
+                assert issue is not None
+                issue.create_comment(legacyInfo)
+
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
@@ -626,6 +680,8 @@ def main(argv=None):
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
         commentsCsvPath = _getConfigOption(config, 'comments', False)
+        attachmentsCsvPath = _getConfigOption( config, 'attachments' )
+        attachmentsPrefix = _getConfigOption( config, 'attachmentsprefix' )
         labelMapping = _getConfigOption(config, 'labels', False)
         password = _getConfigOption(config, 'password')
         repoName = _getConfigOption(config, 'repo')
@@ -638,8 +694,8 @@ def main(argv=None):
         hub = github.Github(user, password)
         _log.info(u'connect to github repo "%s"', repoName)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, userMapping=userMapping,
-                labelMapping=labelMapping, pretend=not options.really)
+        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, attachmentsCsvPath, userMapping=userMapping,
+                labelMapping=labelMapping, attachmentsPrefix=attachmentsPrefix, pretend=not options.really)
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)
