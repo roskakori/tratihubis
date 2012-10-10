@@ -465,11 +465,14 @@ def _createTicketToCommentsMap(commentsCsvPath):
 def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     EXPECTED_COLUMN_COUNT = 4
     result = {}
-    if attachmentsCsvPath is not None:
-        _log.info(u'read attachements from "%s"', attachmentsCsvPath )
 
     if attachmentsCsvPath is not None and attachmentsPrefix is None:
         _log.error(u'attachments csv path specified but attachmentsprefix is not\n' )
+        return result
+
+    if attachmentsCsvPath is not None:
+        _log.info(u'read attachements from "%s"', attachmentsCsvPath )
+    else:
         return result
 
     with open(attachmentsCsvPath, "rb") as attachmentsCsvFile:
@@ -682,8 +685,8 @@ def main(argv=None):
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
         commentsCsvPath = _getConfigOption(config, 'comments', False)
-        attachmentsCsvPath = _getConfigOption( config, 'attachments' )
-        attachmentsPrefix = _getConfigOption( config, 'attachmentsprefix' )
+        attachmentsCsvPath = _getConfigOption( config, 'attachments', False )
+        attachmentsPrefix = _getConfigOption( config, 'attachmentsprefix', False )
         labelMapping = _getConfigOption(config, 'labels', False)
         password = _getConfigOption(config, 'password')
         repoName = _getConfigOption(config, 'repo')
