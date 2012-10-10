@@ -448,6 +448,7 @@ def _createTicketToCommentsMap(commentsCsvPath):
                 if hasReadHeader:
                     commentMap = {
                         'id': long(row[0]),
+                        'date': datetime.datetime.fromtimestamp( long(row[1]) ),
                         'author': row[2],
                         'body': row[3],
                     }
@@ -559,15 +560,15 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
             if len(labels) > 0:
                 issue.edit(labels=labels)
 
-            legacyInfo = u"Imported from trac issue %d.  Created by %s on %s, last modified: %s\n" \
+            legacyInfo = u"_Imported from trac issue %d.  Created by %s on %s, last modified: %s_\n" \
                          % ( ticketId, ticketMap['reporter'], ticketMap['createdtime'].isoformat(), ticketMap['modifiedtime'].isoformat() )
             attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
             if attachmentsToAdd is not None:
                 for attachment in attachmentsToAdd:
                     attachmentAuthor = _githubUserFor( repo, tracToGithubUserMap, attachment['author'], False )
                     legacyInfo += u"* %s attached [%s](%s) on %s\n"  \
-                        % ( attachmentAuthor, attachment['filename'], attachment['fullpath'], attachment['date'] )
-                _log.info(u'  add attachmentcomment %r', _shortened(legacyInfo))
+                        % ( attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'] )
+                _log.info(u'  added attachment from %s', attachmentAuthor)
             
             if not pretend:
                 assert issue is not None
@@ -576,8 +577,9 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
-                    commentBody = comment['body']
                     commentAuthor = _githubUserFor(repo, tracToGithubUserMap, comment['author'], False)
+                    commentBody = u'_Trac comment by %s on %s:_\n\n%s' %\
+                                  ( comment['author'], comment['date'], comment['body'] )
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
                         assert issue is not None

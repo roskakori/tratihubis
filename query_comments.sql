@@ -1,7 +1,7 @@
 -- All Trac ticket comments to convert.
 select
     ticket,
-    time,
+    time / 1000000 as PosixTime,
     author,
     newvalue
 from
