@@ -137,6 +137,16 @@ Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under t
 Changes
 =======
 
+Version 0.5, 2012-10-xx
+
+(Contributed by Steven Di Rocco)
+
+* Added support for file attachments.
+* Added work around for information lost due GitHub API limitations:
+  * Added trac commenter and date at the top of each comment.
+  * Added automatic comment to each isses showing original author, date authored, and last modification date.
+* Fixed API calls to work with PyGithub 1.8.
+
 Version 0.4, 2012-05-04
 
 * Added config option ``labels`` to map Trac status and resolution to  Github labels.
@@ -199,7 +209,7 @@ import datetime
 
 _log = logging.getLogger('tratihubis')
 
-__version__ = "0.4"
+__version__ = "0.5"
 
 _SECTION = 'tratihubis'
 _OPTION_LABELS = 'labels'
