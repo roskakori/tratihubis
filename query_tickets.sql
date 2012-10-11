@@ -8,7 +8,9 @@ select
     status,
     resolution,
     summary,
-    description
+    description,
+    time / 1000000 as PosixTime,
+    modified / 1000000 as ModifiedTime
 from
     ticket
 order
