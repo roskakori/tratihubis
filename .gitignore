@@ -19,6 +19,7 @@ pip-log.txt
 # Unit test / coverage reports
 .coverage
 .tox
+pep8.txt
 
 #Translations
 *.mo

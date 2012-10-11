@@ -49,7 +49,7 @@ class _HubbedTest(unittest.TestCase):
         config = ConfigParser.SafeConfigParser()
         config.read(_TEST_CONFIG_PATHS)
         if not config.has_section('tratihubis'):
-            raise ConfigParser.Error(u'test user and password must be specified in section [tratihubis] ' \
+            raise ConfigParser.Error(u'test user and password must be specified in section [tratihubis] '
                     + 'in one of the following files: %s' % _TEST_CONFIG_PATHS)
         password = config.get('tratihubis', 'password')
         user = config.get('tratihubis', 'user')
@@ -102,7 +102,7 @@ class UserMapTest(_HubbedTest):
         self.assertEqual(userMap, {'*': '*'})
 
     def testFailsOnDuplicateUser(self):
-        self.assertRaises(tratihubis._ConfigError, tratihubis._createTracToGithubUserMap, \
+        self.assertRaises(tratihubis._ConfigError, tratihubis._createTracToGithubUserMap,
                 self.hub, 'hugo: sepp, hugo: resi')
 
 
@@ -114,7 +114,10 @@ class TratihubisTest(_RepoedTest):
                 userMapping=userMapping, labelMapping=labelMapping, pretend=True)
 
     def testCanConvertTestTicketsCsv(self):
-        self._testCanConvertTicketsCsv(os.path.join('test', 'test_tickets.csv'), os.path.join('test', 'test_comments.csv'))
+        self._testCanConvertTicketsCsv(
+                os.path.join('test', 'test_tickets.csv'),
+                os.path.join('test', 'test_comments.csv')
+        )
 
     def testCanConvertCutplaceTicketsCsv(self):
         self._testCanConvertTicketsCsv(os.path.join('test', 'cutplace_tickets.csv'))
