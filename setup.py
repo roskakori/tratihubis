@@ -19,7 +19,7 @@ Tag a release::
   $ git tag -a -m 'Tagged version 1.x.' v1.x
   $ git push --tags
 '''
-# Copyright (c) 2012, Thomas Aglassinger
+# Copyright (c) 2012-2013, Thomas Aglassinger
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,7 @@ setup(
     url='http://pypi.python.org/pypi/tratihubis/',
     license='BSD License',
     long_description=tratihubis.__doc__,  # @UndefinedVariable
-    install_requires=['PyGithub>=0.6', 'setuptools'],
+    install_requires=['PyGithub>=1.8', 'setuptools'],
     entry_points={
         "console_scripts": [
             "tratihubis = tratihubis:_mainEntryPoint",
