@@ -12,7 +12,7 @@ To install tratihubis, use ``pip`` or ``easy_install``::
 
   $ pip install tratihubis
 
-If needed, this also installs the `PyGithub <http://pypi.python.org/pypi/PyGithub/>`_ package.
+If necessary, this also installs the `PyGithub <http://pypi.python.org/pypi/PyGithub/>`_ package.
 
 
 Usage
@@ -102,6 +102,13 @@ between quotes::
   labels = type="software defect": bug
 
 
+Attachments
+-----------
+
+You can find some notes on this in `issue #19 <https://github.com/roskakori/tratihubis/issues/19>`: Add
+documentation for ``attachmentsprefix``.
+
+
 Limitations
 ===========
 
@@ -130,21 +137,21 @@ To obtain the source code or create your own fork to implement fixes or improvem
 License
 =======
 
-Copyright (c) 2012, Thomas Aglassinger. All rights reserved. Distributed under the
+Copyright (c) 2012-2013, Thomas Aglassinger. All rights reserved. Distributed under the
 `BSD License <http://www.opensource.org/licenses/bsd-license.php>`_.
 
 
 Changes
 =======
 
-Version 0.5, 2012-10-xx
+Version 0.5, 2013-02-13
 
 (Contributed by Steven Di Rocco)
 
 * Added support for file attachments.
 * Added work around for information lost due GitHub API limitations:
   * Added trac commenter and date at the top of each comment.
-  * Added automatic comment to each isses showing original author, date authored, and last modification date.
+  * Added automatic comment to each isseu showing original author, date authored, and last modification date.
 * Fixed API calls to work with PyGithub 1.8.
 
 Version 0.4, 2012-05-04
@@ -167,7 +174,7 @@ Version 0.1, 2012-05-01
 
 * Initial release.
 '''
-# Copyright (c) 2012, Thomas Aglassinger
+# Copyright (c) 2012-2013, Thomas Aglassinger
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -483,7 +490,7 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
         return result
 
     if attachmentsCsvPath is not None:
-        _log.info(u'read attachements from "%s"', attachmentsCsvPath)
+        _log.info(u'read attachments from "%s"', attachmentsCsvPath)
     else:
         return result
 
