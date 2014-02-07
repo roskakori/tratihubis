@@ -690,7 +690,7 @@ def _githubUserFor(hub, tracToGithubUserMap, tracUser, validate=True):
     if result is None:
         result = tracToGithubUserMap.get('*')
         if result is None:
-            raise _ConfigError(_OPTION_USERS, u'Trac user "%s" must be mapped to a Github user')
+            raise _ConfigError(_OPTION_USERS, u'Trac user "%s" must be mapped to a Github user' % (tracUser,))
     if result == '*':
         result = tracUser
     if validate:
