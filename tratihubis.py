@@ -222,7 +222,7 @@ _SECTION = 'tratihubis'
 _OPTION_LABELS = 'labels'
 _OPTION_USERS = 'users'
 
-_validatedGithubUsers = set()
+_validatedGithubTokens = set()
 
 _FakeMilestone = collections.namedtuple('_FakeMilestone', ['number', 'title'])
 _FakeIssue = collections.namedtuple('_FakeIssue', ['number', 'title', 'body', 'state'])
@@ -521,7 +521,7 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     return result
 
 
-def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsCsvPath=None, firstTicketIdToConvert=1,
+def migrateTickets(hub, repo, defaultToken, ticketsCsvPath, commentsCsvPath=None, attachmentsCsvPath=None, firstTicketIdToConvert=1,
         lastTicketIdToConvert=0, labelMapping=None, userMapping="*:*", attachmentsPrefix=None, pretend=True):
     assert hub is not None
     assert repo is not None
@@ -532,7 +532,7 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
     tracTicketToAttachmentsMap = _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix)
     existingIssues = _createIssueMap(repo)
     existingMilestones = _createMilestoneMap(repo)
-    tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping)
+    tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping, defaultToken)
     labelTransformations = _LabelTransformations(repo, labelMapping)
 
     def possiblyAddLabel(labels, tracField, tracValue):
@@ -549,9 +549,12 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
         if (ticketId >= firstTicketIdToConvert) \
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
-            tracOwner = ticketMap['owner'].strip()
-            githubAssignee = _githubUserFor(hub, tracToGithubUserMap, tracOwner)
-            githubAssignee = hub.get_user(githubAssignee)
+            tracOwner = ticketMap['owner'].strip() 
+            token = _tokenFor(hub, tracToGithubUserMap, tracOwner)
+            _hub = github.Github(token)
+            _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
+            githubAssignee = _hub.get_user()
+            
             milestoneTitle = ticketMap['milestone'].strip()
             if len(milestoneTitle) != 0:
                 if milestoneTitle not in existingMilestones:
@@ -570,9 +573,9 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
             if not pretend:
                 if milestone is None:
-                    issue = repo.create_issue(title, body, githubAssignee)
+                    issue = _repo.create_issue(title, body)#, githubAssignee)
                 else:
-                    issue = repo.create_issue(title, body, githubAssignee, milestone)
+                    issue = _repo.create_issue(title, body, milestone=milestone)
             else:
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
@@ -590,7 +593,8 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
             attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
             if attachmentsToAdd is not None:
                 for attachment in attachmentsToAdd:
-                    attachmentAuthor = _githubUserFor(repo, tracToGithubUserMap, attachment['author'], False)
+                    token = _tokenFor(repo, tracToGithubUserMap, attachment['author'], False)
+                    attachmentAuthor = _userFor(token)
                     legacyInfo += u"* %s attached [%s](%s) on %s\n"  \
                         % (attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'])
                 _log.info(u'  added attachment from %s', attachmentAuthor)
@@ -602,7 +606,8 @@ def migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath=None, attachmentsC
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
-                    commentAuthor = _githubUserFor(repo, tracToGithubUserMap, comment['author'], False)
+                    token = _tokenFor(repo, tracToGithubUserMap, comment['author'], False)
+                    commentAuthor = _userFor(token)
                     commentBody = u'_Trac comment by %s on %s:_\n\n%s' %\
                                   (comment['author'], comment['date'], comment['body'])
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
@@ -642,48 +647,51 @@ def _parsedOptions(arguments):
 
     return options, configPath
 
-
-def _validateGithubUser(hub, tracUser, githubUser):
+def _validateGithubUser(hub, tracUser, token):
     assert hub is not None
     assert tracUser is not None
-    assert githubUser is not None
-    if githubUser not in _validatedGithubUsers:
+    assert token is not None
+    if token not in _validatedGithubTokens:
         try:
-            _log.debug(u'  check for Github user "%s"', githubUser)
-            hub.get_user(githubUser)
+            _log.debug(u'  check for token "%s"', token)
+            _hub = github.Github(token)
+            githubUser = _hub.get_user()
+            _log.debug(u'  user is "%s"',)
         except:
             # FIXME: After PyGithub API raises a predictable error, use  "except WahteverException".
             raise _ConfigError(_OPTION_USERS,
-                    u'Trac user "%s" must be mapped to an existing Github user instead of "%s"'
+                    u'Trac user "%s" must be mapped to an existing Github users token instead of "%s"'
                     % (tracUser, githubUser))
-        _validatedGithubUsers.add(githubUser)
+        _validatedGithubTokens.add(token)
 
 
-def _createTracToGithubUserMap(hub, definition):
+def _createTracToGithubUserMap(hub, definition, defaultToken):
     result = {}
     for mapping in definition.split(','):
         words = [word.strip() for word in mapping.split(':')]
         if words:
             if len(words) != 2:
                 raise _ConfigError(_OPTION_USERS,
-                        u'mapping must use syntax "trac-user: github-user" but is: "%s"' % mapping)
-            tracUser, githubUser = words
-            if len(tracUser) == 0:
-                raise _ConfigError(_OPTION_USERS, u'Trac user must not be empty: "%s"' % mapping)
-            if len(githubUser) == 0:
-                raise _ConfigError(_OPTION_USERS, u'Github user must not be empty: "%s"' % mapping)
+                        u'mapping must use syntax "trac-user: token" but is: "%s"' % mapping)
+            tracUser, token = words
+            if token == '*':
+                token = defaultToken
+            # if len(tracUser) == 0:
+            #     raise _ConfigError(_OPTION_USERS, u'Trac user must not be empty: "%s"' % mapping)
+            if len(token) == 0:
+                raise _ConfigError(_OPTION_USERS, u'Token not be empty: "%s"' % mapping)
             existingMappedGithubUser = result.get(tracUser)
             if existingMappedGithubUser is not None:
                 raise _ConfigError(_OPTION_USERS,
-                        u'Trac user "%s" must be mapped to only one Github user instead of "%s" and "%s"'
-                         % (tracUser, existingMappedGithubUser, githubUser))
-            result[tracUser] = githubUser
-            if githubUser != '*':
-                _validateGithubUser(hub, tracUser, githubUser)
+                        u'Trac user "%s" must be mapped to only one token instead of "%s" and "%s"'
+                         % (tracUser, existingMappedGithubUser, token))
+            result[tracUser] = token            
+            if token != '*':
+                _validateGithubUser(hub, tracUser, token)
     return result
 
 
-def _githubUserFor(hub, tracToGithubUserMap, tracUser, validate=True):
+def _tokenFor(hub, tracToGithubUserMap, tracUser, validate=True):
     assert tracToGithubUserMap is not None
     assert tracUser is not None
     result = tracToGithubUserMap.get(tracUser)
@@ -697,6 +705,9 @@ def _githubUserFor(hub, tracToGithubUserMap, tracUser, validate=True):
         _validateGithubUser(hub, tracUser, result)
     return result
 
+def _userFor(token):
+    _hub = github.Github(token)
+    return _hub.get_user()
 
 def main(argv=None):
     if argv is None:
@@ -711,18 +722,18 @@ def main(argv=None):
         attachmentsCsvPath = _getConfigOption(config, 'attachments', False)
         attachmentsPrefix = _getConfigOption(config, 'attachmentsprefix', False)
         labelMapping = _getConfigOption(config, 'labels', False)
-        password = _getConfigOption(config, 'password')
         repoName = _getConfigOption(config, 'repo')
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
-        user = _getConfigOption(config, 'user')
-        userMapping = _getConfigOption(config, 'users', False, '*:*')
+        token = _getConfigOption(config, 'token')
+        userMapping = _getConfigOption(config, 'users', False, '*:{0}'.format(token))
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
-        _log.info(u'log on to github as user "%s"', user)
-        hub = github.Github(user, password)
-        _log.info(u'connect to github repo "%s"', repoName)
+
+        hub = github.Github(token)
+        _log.info(u'log on to github as user "%s"', hub.get_user().login)
         repo = hub.get_user().get_repo(repoName)
-        migrateTickets(hub, repo, ticketsCsvPath, commentsCsvPath, attachmentsCsvPath, userMapping=userMapping,
+        _log.info(u'connect to github repo "%s"', repoName)
+        migrateTickets(hub, repo, token, ticketsCsvPath, commentsCsvPath, attachmentsCsvPath, userMapping=userMapping,
                 labelMapping=labelMapping, attachmentsPrefix=attachmentsPrefix, pretend=not options.really)
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
