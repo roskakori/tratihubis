@@ -521,8 +521,12 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     return result
 
 
-def migrateTickets(hub, repo, defaultToken, ticketsCsvPath, commentsCsvPath=None, attachmentsCsvPath=None, firstTicketIdToConvert=1,
-        lastTicketIdToConvert=0, labelMapping=None, userMapping="*:*", attachmentsPrefix=None, pretend=True):
+def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
+                   commentsCsvPath=None, attachmentsCsvPath=None,
+                   firstTicketIdToConvert=1, lastTicketIdToConvert=0,
+                   labelMapping=None, userMapping="*:*", attachmentsPrefix=None,
+                   pretend=True, TracWiki2MediaWiki=None, tracurl=None):
+    
     assert hub is not None
     assert repo is not None
     assert ticketsCsvPath is not None
@@ -549,12 +553,11 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath, commentsCsvPath=None
         if (ticketId >= firstTicketIdToConvert) \
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
-            tracOwner = ticketMap['owner'].strip() 
+            tracOwner = ticketMap['reporter'].strip()
             token = _tokenFor(hub, tracToGithubUserMap, tracOwner)
             _hub = github.Github(token)
             _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
             githubAssignee = _hub.get_user()
-            
             milestoneTitle = ticketMap['milestone'].strip()
             if len(milestoneTitle) != 0:
                 if milestoneTitle not in existingMilestones:
@@ -571,6 +574,21 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath, commentsCsvPath=None
                 milestone = None
                 milestoneNumber = 0
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
+
+            title = convert_text(title, TracWiki2MediaWiki)
+            body = convert_text(body, TracWiki2MediaWiki)
+
+            dateformat = "%m-%d-%Y at %H:%M"
+            ticketString = '#{0}'.format(ticketId)
+            if tracurl:
+                ticketurl = '/'.join([tracurl, 'tickets', str(ticketId)])
+                ticketString = '[{0}]({1})'.format(ticketString, ticketurl)
+            legacyInfo = u"_Imported from trac issue %s  Created by %s on %s, last modified: %s_\n" \
+                         % (ticketString, ticketMap['reporter'], ticketMap['createdtime'].strftime(dateformat),
+                         ticketMap['modifiedtime'].strftime(dateformat))
+
+            body += '\n\n' + legacyInfo
+
             if not pretend:
                 if milestone is None:
                     issue = _repo.create_issue(title, body)#, githubAssignee)
@@ -587,33 +605,35 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath, commentsCsvPath=None
             if len(labels) > 0:
                 issue.edit(labels=labels)
 
-            legacyInfo = u"_Imported from trac issue %d.  Created by %s on %s, last modified: %s_\n" \
-                         % (ticketId, ticketMap['reporter'], ticketMap['createdtime'].isoformat(),
-                         ticketMap['modifiedtime'].isoformat())
             attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
             if attachmentsToAdd is not None:
                 for attachment in attachmentsToAdd:
                     token = _tokenFor(repo, tracToGithubUserMap, attachment['author'], False)
                     attachmentAuthor = _userFor(token)
-                    legacyInfo += u"* %s attached [%s](%s) on %s\n"  \
-                        % (attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'])
+                    legacyInfo = u"* %s attached [%s](%s) on %s\n"  \
+                        % (attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'].strftime(dateformat))
                 _log.info(u'  added attachment from %s', attachmentAuthor)
 
-            if not pretend:
-                assert issue is not None
-                issue.create_comment(legacyInfo)
+                if not pretend:
+                    assert issue is not None
+                    issue.create_comment(legacyInfo)
 
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
                 for comment in commentsToAdd:
                     token = _tokenFor(repo, tracToGithubUserMap, comment['author'], False)
                     commentAuthor = _userFor(token)
-                    commentBody = u'_Trac comment by %s on %s:_\n\n%s' %\
-                                  (comment['author'], comment['date'], comment['body'])
+                    _hub = github.Github(token)
+                    _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
+
+                    commentBody = u'%s\n\n_Trac comment by %s on %s_' % (comment['body'], comment['author'], comment['date'].strftime(dateformat))
+                                  
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
-                        assert issue is not None
-                        issue.create_comment(commentBody)
+                        _issue = _repo.get_issue(issue.number)                        
+                        assert _issue is not None
+                        commentBody = convert_text(commentBody, TracWiki2MediaWiki)
+                        _issue.create_comment(commentBody)
             if ticketMap['status'] == 'closed':
                 _log.info(u'  close issue')
                 if not pretend:
@@ -709,6 +729,26 @@ def _userFor(token):
     _hub = github.Github(token)
     return _hub.get_user()
 
+def convert_text(tracWiki, tracWiki2MediaWiki):
+    import subprocess, tempfile, os, pypandoc
+    f_handle, f_path = tempfile.mkstemp()
+    with os.fdopen(f_handle, 'w') as f:
+        f.write(tracWiki.encode('ascii', 'replace'))
+
+    pipe = subprocess.Popen(['perl', tracWiki2MediaWiki, f_path], stdout=subprocess.PIPE)
+    pipe.wait()
+    os.remove(f_path)
+    outfile = f_path + '.after'
+    with open(outfile, 'r') as f:
+        mediaWiki = f.read()
+    os.remove(outfile)
+    markdown = pypandoc.convert(mediaWiki, 'mediawiki', format='markdown_github')
+    return filter_text(markdown)
+
+def filter_text(text):
+    pattern = r"{{TracNotice|{{PAGENAME}}}}"
+    return text.replace(pattern, "")
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -724,8 +764,10 @@ def main(argv=None):
         labelMapping = _getConfigOption(config, 'labels', False)
         repoName = _getConfigOption(config, 'repo')
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
+        TracWiki2MediaWiki = _getConfigOption(config, 'TracWiki2MediaWiki', False)
         token = _getConfigOption(config, 'token')
         userMapping = _getConfigOption(config, 'users', False, '*:{0}'.format(token))
+        tracurl = _getConfigOption(config, 'tracurl', False)
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
 
@@ -733,8 +775,16 @@ def main(argv=None):
         _log.info(u'log on to github as user "%s"', hub.get_user().login)
         repo = hub.get_user().get_repo(repoName)
         _log.info(u'connect to github repo "%s"', repoName)
-        migrateTickets(hub, repo, token, ticketsCsvPath, commentsCsvPath, attachmentsCsvPath, userMapping=userMapping,
-                labelMapping=labelMapping, attachmentsPrefix=attachmentsPrefix, pretend=not options.really)
+
+        migrateTickets(hub, repo, token, ticketsCsvPath,
+                       commentsCsvPath, attachmentsCsvPath,
+                       userMapping=userMapping,
+                       labelMapping=labelMapping,
+                       attachmentsPrefix=attachmentsPrefix,
+                       pretend=not options.really,
+                       TracWiki2MediaWiki=TracWiki2MediaWiki,
+                       tracurl=tracurl)
+        
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)
