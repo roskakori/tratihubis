@@ -480,7 +480,6 @@ def _createTicketToCommentsMap(commentsCsvPath):
                     hasReadHeader = True
     return result
 
-
 def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     EXPECTED_COLUMN_COUNT = 4
     result = {}
@@ -520,12 +519,24 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
 
     return result
 
+def createTicketsToIssuesMap(ticketsCsvPath, existingIssues, firstTicketIdToConvert, lastTicketIdToConvert):
+    ticketsToIssuesMap = dict()
+    fakeIssueId = 1 + len(existingIssues)
+    for ticketMap in _tracTicketMaps(ticketsCsvPath):
+        ticketId = ticketMap['id']
+        if (ticketId >= firstTicketIdToConvert) \
+          and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
+          ticketsToIssuesMap[int(ticketId)] = fakeIssueId
+          fakeIssueId += 1
+
+    return ticketsToIssuesMap
 
 def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                    commentsCsvPath=None, attachmentsCsvPath=None,
                    firstTicketIdToConvert=1, lastTicketIdToConvert=0,
-                   labelMapping=None, userMapping="*:*", attachmentsPrefix=None,
-                   pretend=True, TracWiki2MediaWiki=None, tracurl=None):
+                   labelMapping=None, userMapping="*:*",
+                   attachmentsPrefix=None, pretend=True,
+                   tracurl=None):
     
     assert hub is not None
     assert repo is not None
@@ -538,6 +549,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     existingMilestones = _createMilestoneMap(repo)
     tracToGithubUserMap = _createTracToGithubUserMap(hub, userMapping, defaultToken)
     labelTransformations = _LabelTransformations(repo, labelMapping)
+    ticketsToIssuesMap = createTicketsToIssuesMap(ticketsCsvPath, existingIssues, firstTicketIdToConvert, lastTicketIdToConvert)
 
     def possiblyAddLabel(labels, tracField, tracValue):
         label = labelTransformations.labelFor(tracField, tracValue)
@@ -575,19 +587,19 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                 milestoneNumber = 0
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
 
-            title = convert_text(title, TracWiki2MediaWiki)
-            body = convert_text(body, TracWiki2MediaWiki)
+            title = convert_text(title, repo, ticketsToIssuesMap)
+            body = convert_text(body, repo, ticketsToIssuesMap)
 
             dateformat = "%m-%d-%Y at %H:%M"
             ticketString = '#{0}'.format(ticketId)
             if tracurl:
-                ticketurl = '/'.join([tracurl, 'tickets', str(ticketId)])
+                ticketurl = '/'.join([tracurl, 'ticket', str(ticketId)])
                 ticketString = '[{0}]({1})'.format(ticketString, ticketurl)
-            legacyInfo = u"_Imported from trac issue %s  Created by %s on %s, last modified: %s_\n" \
+            legacyInfo = u"\n\n _Imported from trac ticket %s,  created by %s on %s, last modified: %s_\n" \
                          % (ticketString, ticketMap['reporter'], ticketMap['createdtime'].strftime(dateformat),
                          ticketMap['modifiedtime'].strftime(dateformat))
 
-            body += '\n\n' + legacyInfo
+            body += legacyInfo
 
             if not pretend:
                 if milestone is None:
@@ -597,8 +609,11 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
             else:
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
+                
             _log.info(u'  issue #%s: owner=%s-->%s; milestone=%s (%d)',
                     issue.number, tracOwner, githubAssignee.name, milestoneTitle, milestoneNumber)
+             
+
             labels = []
             possiblyAddLabel(labels, 'type', ticketMap['type'])
             possiblyAddLabel(labels, 'resolution', ticketMap['resolution'])
@@ -626,13 +641,13 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     _hub = github.Github(token)
                     _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
 
-                    commentBody = u'%s\n\n_Trac comment by %s on %s_' % (comment['body'], comment['author'], comment['date'].strftime(dateformat))
+                    commentBody = u"%s\n\n_Trac comment by %s on %s_\n" % (comment['body'], comment['author'], comment['date'].strftime(dateformat))
                                   
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
                         _issue = _repo.get_issue(issue.number)                        
                         assert _issue is not None
-                        commentBody = convert_text(commentBody, TracWiki2MediaWiki)
+                        commentBody = convert_text(commentBody, repo, ticketsToIssuesMap)
                         _issue.create_comment(commentBody)
             if ticketMap['status'] == 'closed':
                 _log.info(u'  close issue')
@@ -640,7 +655,6 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     issue.edit(state='closed')
         else:
             _log.info(u'skip ticket #%d: %s', ticketId, title)
-
 
 def _parsedOptions(arguments):
     assert arguments is not None
@@ -729,25 +743,45 @@ def _userFor(token):
     _hub = github.Github(token)
     return _hub.get_user()
 
-def convert_text(tracWiki, tracWiki2MediaWiki):
-    import subprocess, tempfile, os, pypandoc
-    f_handle, f_path = tempfile.mkstemp()
-    with os.fdopen(f_handle, 'w') as f:
-        f.write(tracWiki.encode('ascii', 'replace'))
+def convert_text(text, repo, tickets2issues):
+    import re
 
-    pipe = subprocess.Popen(['perl', tracWiki2MediaWiki, f_path], stdout=subprocess.PIPE)
-    pipe.wait()
-    os.remove(f_path)
-    outfile = f_path + '.after'
-    with open(outfile, 'r') as f:
-        mediaWiki = f.read()
-    os.remove(outfile)
-    markdown = pypandoc.convert(mediaWiki, 'mediawiki', format='markdown_github')
-    return filter_text(markdown)
+    repo_url = r'https://github.com/{login}/{name}'.format(login=repo.owner.login, name=repo.name)
+    trac_url = r'http://matforge.org/fipy'
 
-def filter_text(text):
-    pattern = r"{{TracNotice|{{PAGENAME}}}}"
-    return text.replace(pattern, "")
+    subs = [
+    [r"\{\{\{\s*?#!python(.*?)\}\}\}", r"```python\1```"],
+    [r"\{\{\{(.*?)\}\}\}",  r"```\1```"],    
+    [r"====\s(.+?)\s====", r'h4. \1'],
+    [r"===\s(.+?)\s===", r'h3. \1'],
+    [r"==\s(.+?)\s==", r'h2. \1'],
+    #    [r'([^"\/\!])(([A-Z][a-z0-9]+){2,})', r'\1[[\2]]'],
+    [r"\!(([A-Z][a-z0-9]+){2,})", r'\1'],
+    [r"'''(.+)'''", r'*\1*'],
+    [r"''(.+)''", r'_\1_'],
+    [r"^\s\*", r'*'],
+    [r"^\s\d\.", r'#'],
+    [r"!(\w)", r"\1"],
+    [r"(^|\n)[ ]{4,}", r"\1"],
+    [r"\[(.*?)\s(.*?)\]", r"[\2](\1)"],
+    [r"(\s|^)r([0-9]{1,4})", r"\1[r\2]({trac_url}/changeset/\2/historical)".format(trac_url=trac_url)],
+    [r"changeset:([0-9]{1,4})", r"[r\1]({trac_url}/changeset/\1/historical)".format(trac_url=trac_url)],
+    [r"source:branches/(\w*)", r"[\1]({repo_url}/tree/\1)".format(repo_url=repo_url)],
+    [r"source:([\w/\.]*)", r"[\1]({repo_url}/tree/master/\1)".format(repo_url=repo_url)],
+    [r"blog:(\w*)", r"[blog:\1]({trac_url}/blog/\1)".format(trac_url=trac_url)],
+    [r"(\b)([0-9a-f]{5,40})\.", r"\1\2"],
+    [r" (\w*?)::", r"#### \1"]]
+
+    if tickets2issues:
+        regex = r"ticket:([0-9]{1,3})"
+        sub = lambda m: r"issue #{0}".format(tickets2issues[int(m.group(1))])
+        subs.append([regex, sub])
+        
+    for regex, sub in subs:
+        p = re.compile(regex, re.DOTALL)
+        text = p.sub(sub, text)
+        
+    return text
 
 def main(argv=None):
     if argv is None:
@@ -764,7 +798,6 @@ def main(argv=None):
         labelMapping = _getConfigOption(config, 'labels', False)
         repoName = _getConfigOption(config, 'repo')
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
-        TracWiki2MediaWiki = _getConfigOption(config, 'TracWiki2MediaWiki', False)
         token = _getConfigOption(config, 'token')
         userMapping = _getConfigOption(config, 'users', False, '*:{0}'.format(token))
         tracurl = _getConfigOption(config, 'tracurl', False)
@@ -782,7 +815,6 @@ def main(argv=None):
                        labelMapping=labelMapping,
                        attachmentsPrefix=attachmentsPrefix,
                        pretend=not options.really,
-                       TracWiki2MediaWiki=TracWiki2MediaWiki,
                        tracurl=tracurl)
         
         exitCode = 0
