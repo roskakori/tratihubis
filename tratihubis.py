@@ -1,5 +1,5 @@
-'''
-Tratihubis converts Trac tickets to Github issues by using the following steps:
+''' Tratihubis converts Trac tickets to Github issues by using the
+following steps:
 
 1. The user manually exports the Trac tickets to convert to a CSV file.
 2. Tratihubis reads the CSV file and uses the data to create Github issues and milestones.
@@ -29,8 +29,7 @@ Next create a config file to describe how to login to Github and what to convert
 store the following in ``~/mytool/tratihubis.cfg``::
 
   [tratihubis]
-  user = someone
-  password = secret
+  token = my_github_token
   repo = mytool
   tickets = /Users/me/mytool/tickets.csv
   comments = /Users/me/mytool/comments.csv
@@ -55,14 +54,16 @@ Mapping users
 
 In case the Trac users have different user names on Github, you can specify a mapping. For example::
 
-   users = johndoe: jdoe78, *: me
+   users = johndoe: johndoe_token, *: another_token, sally: *
 
-This would map the Trac user ``johndoe`` to the Github user ``jdoe78`` and everyone else to the user ``me``.
+This would map the Trac user ``johndoe`` using John Doe's Github token and everyone else to a `another_token`. Sally will
+get mapped to `my_github_token`.
+
 The default value is::
 
   users = *:*
 
-This maps every Trac user to a Github user with the same name.
+This maps every Trac user to the default token.
 
 Mapping labels
 --------------
@@ -108,6 +109,25 @@ Attachments
 You can find some notes on this in `issue #19 <https://github.com/roskakori/tratihubis/issues/19>`: Add
 documentation for ``attachmentsprefix``.
 
+Converting Trac Wiki Markup to Github Markdown
+----------------------------------------------
+
+Tratihubis makes an attempt to convert Trac Wiki markup into
+Github markdown with the use of a number of regular expression
+substitutions. This is far from a perfect process so care should be
+taken and the the regular expressions may need amending on a case by
+case basis. This conversion process also tries to preserve links
+between tickets with expressions such as `ticket:XX` converted to
+`issue #YY`. Also links in Trac such as `rXXXX` when referring to
+subversion changeset will link back to the original Trac repository if
+required. Use::
+
+  convert_text = true
+
+in the `.cfg` file to attempt the markup conversion. Stipulate the
+Trac repository with::
+
+  trac_url = https://trac/url
 
 Limitations
 ===========
@@ -213,6 +233,8 @@ import sys
 import token
 import tokenize
 import datetime
+
+from translator import Translator, NullTranslator
 
 _log = logging.getLogger('tratihubis')
 
@@ -365,10 +387,12 @@ class _LabelTransformations(object):
                 transformationIndex += 1
         return result
 
-
-def _getConfigOption(config, name, required=True, defaultValue=None):
+def _getConfigOption(config, name, required=True, defaultValue=None, boolean=False):
     try:
-        result = config.get(_SECTION, name)
+        if boolean:
+            result = config.getboolean(_SECTION, name)
+        else:
+            result = config.get(_SECTION, name)
     except ConfigParser.NoOptionError:
         if required:
             raise _ConfigError(name, 'config must contain a value for this option')
@@ -536,7 +560,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                    firstTicketIdToConvert=1, lastTicketIdToConvert=0,
                    labelMapping=None, userMapping="*:*",
                    attachmentsPrefix=None, pretend=True,
-                   tracurl=None):
+                   trac_url=None, convert_text=False):
     
     assert hub is not None
     assert repo is not None
@@ -551,6 +575,13 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     labelTransformations = _LabelTransformations(repo, labelMapping)
     ticketsToIssuesMap = createTicketsToIssuesMap(ticketsCsvPath, existingIssues, firstTicketIdToConvert, lastTicketIdToConvert)
 
+    if convert_text:
+        Translator_ = Translator
+    else:
+        Translator_ = NullTranslator
+
+    translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url)
+        
     def possiblyAddLabel(labels, tracField, tracValue):
         label = labelTransformations.labelFor(tracField, tracValue)
         if label is not None:
@@ -587,14 +618,14 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                 milestoneNumber = 0
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
 
-            title = convert_text(title, repo, ticketsToIssuesMap)
-            body = convert_text(body, repo, ticketsToIssuesMap)
+            title = translator.translate(title)
+            body = translator.translate(body)
 
             dateformat = "%m-%d-%Y at %H:%M"
             ticketString = '#{0}'.format(ticketId)
-            if tracurl:
-                ticketurl = '/'.join([tracurl, 'ticket', str(ticketId)])
-                ticketString = '[{0}]({1})'.format(ticketString, ticketurl)
+            if trac_url:
+                ticket_url = '/'.join([trac_url, 'ticket', str(ticketId)])
+                ticketString = '[{0}]({1})'.format(ticketString, ticket_url)
             legacyInfo = u"\n\n _Imported from trac ticket %s,  created by %s on %s, last modified: %s_\n" \
                          % (ticketString, ticketMap['reporter'], ticketMap['createdtime'].strftime(dateformat),
                          ticketMap['modifiedtime'].strftime(dateformat))
@@ -647,7 +678,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     if not pretend:
                         _issue = _repo.get_issue(issue.number)                        
                         assert _issue is not None
-                        commentBody = convert_text(commentBody, repo, ticketsToIssuesMap)
+                        commentBody = tranlator.translate(commentBody)
                         _issue.create_comment(commentBody)
             if ticketMap['status'] == 'closed':
                 _log.info(u'  close issue')
@@ -743,46 +774,6 @@ def _userFor(token):
     _hub = github.Github(token)
     return _hub.get_user()
 
-def convert_text(text, repo, tickets2issues):
-    import re
-
-    repo_url = r'https://github.com/{login}/{name}'.format(login=repo.owner.login, name=repo.name)
-    trac_url = r'http://matforge.org/fipy'
-
-    subs = [
-    [r"\{\{\{\s*?#!python(.*?)\}\}\}", r"```python\1```"],
-    [r"\{\{\{(.*?)\}\}\}",  r"```\1```"],    
-    [r"====\s(.+?)\s====", r'h4. \1'],
-    [r"===\s(.+?)\s===", r'h3. \1'],
-    [r"==\s(.+?)\s==", r'h2. \1'],
-    #    [r'([^"\/\!])(([A-Z][a-z0-9]+){2,})', r'\1[[\2]]'],
-    [r"\!(([A-Z][a-z0-9]+){2,})", r'\1'],
-    [r"'''(.+)'''", r'*\1*'],
-    [r"''(.+)''", r'_\1_'],
-    [r"^\s\*", r'*'],
-    [r"^\s\d\.", r'#'],
-    [r"!(\w)", r"\1"],
-    [r"(^|\n)[ ]{4,}", r"\1"],
-    [r"\[(.*?)\s(.*?)\]", r"[\2](\1)"],
-    [r"(\s|^)r([0-9]{1,4})", r"\1[r\2]({trac_url}/changeset/\2/historical)".format(trac_url=trac_url)],
-    [r"changeset:([0-9]{1,4})", r"[r\1]({trac_url}/changeset/\1/historical)".format(trac_url=trac_url)],
-    [r"source:branches/(\w*)", r"[\1]({repo_url}/tree/\1)".format(repo_url=repo_url)],
-    [r"source:([\w/\.]*)", r"[\1]({repo_url}/tree/master/\1)".format(repo_url=repo_url)],
-    [r"blog:(\w*)", r"[blog:\1]({trac_url}/blog/\1)".format(trac_url=trac_url)],
-    [r"(\b)([0-9a-f]{5,40})\.", r"\1\2"],
-    [r" (\w*?)::", r"#### \1"]]
-
-    if tickets2issues:
-        regex = r"ticket:([0-9]{1,3})"
-        sub = lambda m: r"issue #{0}".format(tickets2issues[int(m.group(1))])
-        subs.append([regex, sub])
-        
-    for regex, sub in subs:
-        p = re.compile(regex, re.DOTALL)
-        text = p.sub(sub, text)
-        
-    return text
-
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -800,7 +791,12 @@ def main(argv=None):
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
         token = _getConfigOption(config, 'token')
         userMapping = _getConfigOption(config, 'users', False, '*:{0}'.format(token))
-        tracurl = _getConfigOption(config, 'tracurl', False)
+        trac_url = _getConfigOption(config, 'trac_url', False)        
+        convert_text = _getConfigOption(config, 'convert_text',
+                                        required=False,
+                                        defaultValue=False,
+                                        boolean=True)
+
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
 
@@ -815,7 +811,7 @@ def main(argv=None):
                        labelMapping=labelMapping,
                        attachmentsPrefix=attachmentsPrefix,
                        pretend=not options.really,
-                       tracurl=tracurl)
+                       trac_url=trac_url, convert_text=convert_text)
         
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
