@@ -593,7 +593,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     else:
         Translator_ = NullTranslator
 
-    translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url)
+    translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url, attachmentsPrefix=attachmentsPrefix)
         
     def possiblyAddLabel(labels, tracField, tracValue):
         label = labelTransformations.labelFor(tracField, tracValue)
@@ -680,6 +680,9 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                         % (attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'].strftime(dateformat))
                 _log.info(u'  added attachment from %s', attachmentAuthor)
 
+                if ticketsToRender:
+                    print 'attachment legacy info:',legacyInfo
+                
                 if not pretend:
                     assert issue is not None
                     issue.create_comment(legacyInfo)

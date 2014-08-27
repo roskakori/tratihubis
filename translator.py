@@ -4,11 +4,12 @@ class Translator(object):
     """
     Simple regular expression to convert Trac wiki to Github markdown.
     """
-    def __init__(self, repo, ticketsToIssuesMap, trac_url=None):
+    def __init__(self, repo, ticketsToIssuesMap, trac_url=None, attachmentsPrefix=None):
         self.repo_url = r'https://github.com/{login}/{name}'.format(login=repo.owner.login, name=repo.name)
         self.trac_url = trac_url
         self.ticketsToIssuesMap = ticketsToIssuesMap
         self.subs = self.compile_subs()
+        self.attachmentsPrefix = attachmentsPrefix
 
     def compile_subs(self):
         subs = [
@@ -41,7 +42,7 @@ class Translator(object):
         return [[re.compile(r, re.DOTALL), s] for r, s in subs]
     
     def translate(self, text, ticketId=''):
-        sub = [r"\[\[Image\((\S*?)\,\s{1,}\S*?\)\]\]", r"![\1]({trac_url}/attachment/ticket/{ticketId}/\1)".format(trac_url=self.trac_url, ticketId=ticketId)]
+        sub = [r"\[\[Image\((\S*?)\,\s{1,}\S*?\)\]\]", r"![\1]({attachmentsPrefix}/{ticketId}/\1)".format(attachmentsPrefix=self.attachmentsPrefix, ticketId=ticketId)]
         r, s = sub
         p = re.compile(r, re.DOTALL)
         text = p.sub(s, text)
