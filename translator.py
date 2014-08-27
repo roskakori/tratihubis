@@ -24,14 +24,15 @@ class Translator(object):
             [r"^\s\d\.", r'#'],
             [r"!(\w)", r"\1"],
             [r"(^|\n)[ ]{4,}", r"\1"],
-            [r"\[(.*?)\s(.*?)\]", r"[\2](\1)"],
             [r"(\s|^)r([0-9]{1,4})", r"\1[r\2]({trac_url}/changeset/\2/historical)".format(trac_url=self.trac_url)],
             [r"changeset:([0-9]{1,4})", r"[r\1]({trac_url}/changeset/\1/historical)".format(trac_url=self.trac_url)],
             [r"source:branches/(\w*)", r"[\1]({repo_url}/tree/\1)".format(repo_url=self.repo_url)],
             [r"source:([\w/\.]*)", r"[\1]({repo_url}/tree/master/\1)".format(repo_url=self.repo_url)],
             [r"blog:(\w*)", r"[blog:\1]({trac_url}/blog/\1)".format(trac_url=self.trac_url)],
             [r"(\b)([0-9a-f]{5,40})\.", r"\1\2"],
-            [r" (\w*?)::", r"#### \1"]]
+            [r" (\w*?)::", r"#### \1"],
+            [r"\[([0-9]{1,4})\/(.+?)\]", r"[\1/\2]({trac_url}/changeset/\1/historical/\2)".format(trac_url=self.trac_url)],
+            [r"\[(\S*?)\s{1,}(\S*?)\]", r"[\2](\1)"]]
 
         regex = r"ticket:([0-9]{1,3})"
         sub = lambda m: r"issue #{0}".format(self.ticketsToIssuesMap[int(m.group(1))])
@@ -39,9 +40,15 @@ class Translator(object):
 
         return [[re.compile(r, re.DOTALL), s] for r, s in subs]
     
-    def translate(self, text):
+    def translate(self, text, ticketId=''):
+        sub = [r"\[\[Image\((\S*?)\,\s{1,}\S*?\)\]\]", r"![\1]({trac_url}/attachment/ticket/{ticketId}/\1)".format(trac_url=self.trac_url, ticketId=ticketId)]
+        r, s = sub
+        p = re.compile(r, re.DOTALL)
+        text = p.sub(s, text)
+
         for p, s in self.subs:
             text = p.sub(s, text)
+        
         return text
 
 class NullTranslator(Translator):
