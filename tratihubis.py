@@ -249,6 +249,10 @@ _validatedGithubTokens = set()
 _FakeMilestone = collections.namedtuple('_FakeMilestone', ['number', 'title'])
 _FakeIssue = collections.namedtuple('_FakeIssue', ['number', 'title', 'body', 'state'])
 
+csv.field_size_limit(sys.maxsize)
+
+
+
 
 class _ConfigError(Exception):
     def __init__(self, option, message):
@@ -421,7 +425,7 @@ def _tracTicketMaps(ticketsCsvPath):
     _log.info(u'read ticket details from "%s"', ticketsCsvPath)
     with open(ticketsCsvPath, "rb") as ticketCsvFile:
         csvReader = _UnicodeCsvReader(ticketCsvFile)
-        hasReadHeader = False
+        hasReadHeader = True
         for rowIndex, row in enumerate(csvReader):
             columnCount = len(row)
             if columnCount != EXPECTED_COLUMN_COUNT:
@@ -480,7 +484,7 @@ def _createTicketToCommentsMap(commentsCsvPath):
         _log.info(u'read ticket comments from "%s"', commentsCsvPath)
         with open(commentsCsvPath, "rb") as commentsCsvFile:
             csvReader = _UnicodeCsvReader(commentsCsvFile)
-            hasReadHeader = False
+            hasReadHeader = True
             for rowIndex, row in enumerate(csvReader):
                 columnCount = len(row)
                 if columnCount != EXPECTED_COLUMN_COUNT:
@@ -504,6 +508,13 @@ def _createTicketToCommentsMap(commentsCsvPath):
                     hasReadHeader = True
     return result
 
+def is_int(s):
+    try:
+        long(s)
+        return True
+    except ValueError:
+        return False
+
 def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     EXPECTED_COLUMN_COUNT = 4
     result = {}
@@ -519,7 +530,7 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
 
     with open(attachmentsCsvPath, "rb") as attachmentsCsvFile:
         attachmentsReader = _UnicodeCsvReader(attachmentsCsvFile)
-        hasReadHeader = False
+        hasReadHeader = True
         for rowIndex, row in enumerate(attachmentsReader):
             columnCount = len(row)
             if columnCount != EXPECTED_COLUMN_COUNT:
@@ -527,17 +538,19 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
                     u'attachment row must have %d columns but has %d: %r' %
                     (EXPECTED_COLUMN_COUNT, columnCount, row))
             if hasReadHeader:
-                attachmentMap = {
-                    'id': long(row[0]),
+                id_string = row[0]
+                if is_int(id_string):
+                    attachmentMap = {
+                    'id': long(id_string),
                     'author': row[3],
                     'filename': row[1],
                     'date': datetime.datetime.fromtimestamp(long(row[2])),
                     'fullpath': u'%s/%s/%s' % (attachmentsPrefix, row[0], row[1]),
-                }
-                if not attachmentMap['id'] in result:
-                    result[attachmentMap['id']] = [attachmentMap]
-                else:
-                    result[attachmentMap['id']].append(attachmentMap)
+                    }
+                    if not attachmentMap['id'] in result:
+                        result[attachmentMap['id']] = [attachmentMap]
+                    else:
+                        result[attachmentMap['id']].append(attachmentMap)
             else:
                 hasReadHeader = True
 
@@ -619,7 +632,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
 
             title = translator.translate(title)
-            body = translator.translate(body)
+            body = translator.translate(body, ticketId=ticketId)
 
             dateformat = "%m-%d-%Y at %H:%M"
             ticketString = '#{0}'.format(ticketId)
@@ -678,7 +691,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     if not pretend:
                         _issue = _repo.get_issue(issue.number)                        
                         assert _issue is not None
-                        commentBody = tranlator.translate(commentBody)
+                        commentBody = translator.translate(commentBody)
                         _issue.create_comment(commentBody)
             if ticketMap['status'] == 'closed':
                 _log.info(u'  close issue')
