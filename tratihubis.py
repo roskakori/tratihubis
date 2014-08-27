@@ -573,7 +573,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                    firstTicketIdToConvert=1, lastTicketIdToConvert=0,
                    labelMapping=None, userMapping="*:*",
                    attachmentsPrefix=None, pretend=True,
-                   trac_url=None, convert_text=False):
+                   trac_url=None, convert_text=False, ticketsToRender=False):
     
     assert hub is not None
     assert repo is not None
@@ -606,7 +606,11 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
         title = ticketMap['summary']
-        if (ticketId >= firstTicketIdToConvert) \
+        renderTicket = True
+        if ticketsToRender:
+            if not ticketId in ticketsToRender:
+                renderTicket = False
+        if renderTicket and (ticketId >= firstTicketIdToConvert) \
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
             tracOwner = ticketMap['reporter'].strip()
@@ -645,6 +649,9 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
 
             body += legacyInfo
 
+            if ticketsToRender:
+                print 'body of ticket:\n', body
+            
             if not pretend:
                 if milestone is None:
                     issue = _repo.create_issue(title, body)#, githubAssignee)
@@ -809,6 +816,14 @@ def main(argv=None):
                                         required=False,
                                         defaultValue=False,
                                         boolean=True)
+        ticketsToRender = _getConfigOption(config,
+                                           'ticketsToRender',
+                                           required=False,
+                                           defaultValue=False,
+                                           boolean=False)
+
+        if ticketsToRender:
+            ticketsToRender = [long(x) for x in ticketsToRender.split(',')]
 
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
@@ -824,7 +839,7 @@ def main(argv=None):
                        labelMapping=labelMapping,
                        attachmentsPrefix=attachmentsPrefix,
                        pretend=not options.really,
-                       trac_url=trac_url, convert_text=convert_text)
+                       trac_url=trac_url, convert_text=convert_text, ticketsToRender=ticketsToRender)
         
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
