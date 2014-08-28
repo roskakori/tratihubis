@@ -11,7 +11,8 @@ copy
     summary,
     description,
     time / 1000000 as PosixTime,
-    changetime / 1000000 as ModifiedTime
+    changetime / 1000000 as ModifiedTime,
+    component
 from
     ticket
 order
