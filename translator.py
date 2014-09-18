@@ -14,6 +14,7 @@ class Translator(object):
     def compile_subs(self):
         subs = [
             [r"\{\{\{\s*?#!python(.*?)\}\}\}", r"```python\1```"],
+            [r"\{\{\{([^\n]*?)\}\}\}",  r"`\1`"],    
             [r"\{\{\{(.*?)\}\}\}",  r"```\1```"],    
             [r"====\s(.+?)\s====", r'h4. \1'],
             [r"===\s(.+?)\s===", r'h3. \1'],
@@ -25,16 +26,18 @@ class Translator(object):
             [r"^\s\d\.", r'#'],
             [r"!(\w)", r"\1"],
             [r"(^|\n)[ ]{4,}", r"\1"],
-            [r"\[(\S*?)\s{1,}(.+?)\]", r"[\2](\1)"],
+            [r"\[([^\s\n\,\]\.]{4,}?)\s{1,}([^\n]+?)\]", r"[\2](\1)"],
             [r"(\s|^)r([0-9]{1,4})", r"\1[r\2]({trac_url}/changeset/\2/historical)".format(trac_url=self.trac_url)],
             [r"changeset:([0-9]{1,4})", r"[r\1]({trac_url}/changeset/\1/historical)".format(trac_url=self.trac_url)],
-            [r"source:branches/(\w*)", r"[\1](../tree/\1)"],
+            [r"source:branches/([\w\-]*)", r"[\1](../tree/\1)"],
+            [r"source:fipy/([\w/\.]*)@([0-9a-f]{5,40})", r"[\1@\2](../tree/\2/\1)"],
             [r"source:([\w/\.]*)", r"[\1](../tree/master/\1)"],
             [r"blog:(\w*)", r"[blog:\1]({trac_url}/blog/\1)".format(trac_url=self.trac_url)],
             [r"(\b)([0-9a-f]{5,40})\.", r"\1\2"],
             [r" (\w*?)::", r"#### \1"],
             [r"\[([0-9]{1,4})\/(.+?)\]", r"[\1/\2]({trac_url}/changeset/\1/historical/\2)".format(trac_url=self.trac_url)],
-            [r'\[changeset:"(\S*?)\/fipy"\]', r"\1"]
+            [r'\[changeset:"(\S*?)\/fipy"\]', r"\1"],          
+            [r'\^([0-9]{1,5})\^', r"<sup>\1</sup>"]            
             ]
 
         regex = r"ticket:([0-9]{1,3})"
@@ -56,7 +59,6 @@ class Translator(object):
         for r, s in subs:
             p = re.compile(r, re.DOTALL)
             text = p.sub(s, text)
-
         for p, s in self.subs:
             text = p.sub(s, text)
         

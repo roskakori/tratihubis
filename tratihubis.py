@@ -681,8 +681,11 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                 for l in labels:
                     _addNewLabel(l, repo)
             if len(labels) > 0:
-                issue.edit(labels=labels)
-
+                _hub = github.Github(defaultToken)
+                _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
+                _issue = _repo.get_issue(issue.number)
+                _issue.edit(labels=labels)
+                
             attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
             if attachmentsToAdd is not None:
                 for attachment in attachmentsToAdd:
