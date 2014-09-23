@@ -26,7 +26,7 @@ class Translator(object):
             [r"^\s\d\.", r'#'],
             [r"!(\w)", r"\1"],
             [r"(^|\n)[ ]{4,}", r"\1"],
-            [r"\[([^\s\n\,\]\.]{4,}?)\s{1,}([^\n]+?)\]", r"[\2](\1)"],
+            [r"\[([^\s\n\,\]\.\(\)]{4,}?)\s{1,}([^\n]+?)\]", r"[\2](\1)"],
             [r"(\s|^)r([0-9]{1,4})", r"\1[r\2]({trac_url}/changeset/\2/historical)".format(trac_url=self.trac_url)],
             [r"changeset:([0-9]{1,4})", r"[r\1]({trac_url}/changeset/\1/historical)".format(trac_url=self.trac_url)],
             [r"source:branches/([\w\-]*)", r"[\1](../tree/\1)"],
@@ -37,7 +37,8 @@ class Translator(object):
             [r" (\w*?)::", r"#### \1"],
             [r"\[([0-9]{1,4})\/(.+?)\]", r"[\1/\2]({trac_url}/changeset/\1/historical/\2)".format(trac_url=self.trac_url)],
             [r'\[changeset:"(\S*?)\/fipy"\]', r"\1"],          
-            [r'\^([0-9]{1,5})\^', r"<sup>\1</sup>"]            
+            [r'\^([0-9]{1,5})\^', r"<sup>\1</sup>"],
+            [r'diff:@([0-9]{1,5}):([0-9]{1,5})', r'[diff:@\1:\2]({trac_url}/changeset?new=\2&old=\1)'.format(trac_url=self.trac_url)]
             ]
 
         regex = r"ticket:([0-9]{1,3})"
