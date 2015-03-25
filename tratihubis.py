@@ -52,12 +52,17 @@ enable ``--really``.
 Mapping users
 -------------
 
-In case the Trac users have different user names on Github, you can specify a mapping. For example::
+By default all tickets and comments are created by the user specified with the option `token`. For
+private Trac project with a single user this already gives the desired result in the Github project.
+
+In case there are multiple Trac users, you can map them to different Github tokens using the option
+`users`. For example::
 
    users = johndoe: johndoe_token, *: another_token, sally: *
 
-This would map the Trac user ``johndoe`` using John Doe's Github token and everyone else to a `another_token`. Sally will
-get mapped to `my_github_token`.
+This maps the Trac user ``ohndoe` using John Doe's Github token and everyone else to
+`another_token`. Sally is mapped to default token as specified with the `token` option above,
+which in this example is `my_github_token`.
 
 The default value is::
 
@@ -164,6 +169,15 @@ Copyright (c) 2012-2013, Thomas Aglassinger. All rights reserved. Distributed un
 Changes
 =======
 
+Version 1.0, 2014-06-14
+
+(Contributed by Daniel Wheeler)
+
+* Changed user authentication from password to token.
+* Added basic translation of Wiki markup.
+* Added conversion of ticket:xx links.
+* Added backlink to from Github issue to original Trac link.
+
 Version 0.5, 2013-02-13
 
 (Contributed by Steven Di Rocco)
@@ -238,7 +252,7 @@ from translator import Translator, NullTranslator
 
 _log = logging.getLogger('tratihubis')
 
-__version__ = "0.5"
+__version__ = "1.0"
 
 _SECTION = 'tratihubis'
 _OPTION_LABELS = 'labels'
@@ -561,7 +575,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                    labelMapping=None, userMapping="*:*",
                    attachmentsPrefix=None, pretend=True,
                    trac_url=None, convert_text=False):
-    
+
     assert hub is not None
     assert repo is not None
     assert ticketsCsvPath is not None
@@ -581,7 +595,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
         Translator_ = NullTranslator
 
     translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url)
-        
+
     def possiblyAddLabel(labels, tracField, tracValue):
         label = labelTransformations.labelFor(tracField, tracValue)
         if label is not None:
@@ -640,10 +654,10 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
             else:
                 issue = _FakeIssue(fakeIssueId, title, body, 'open')
                 fakeIssueId += 1
-                
+
             _log.info(u'  issue #%s: owner=%s-->%s; milestone=%s (%d)',
                     issue.number, tracOwner, githubAssignee.name, milestoneTitle, milestoneNumber)
-             
+
 
             labels = []
             possiblyAddLabel(labels, 'type', ticketMap['type'])
@@ -673,10 +687,10 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
 
                     commentBody = u"%s\n\n_Trac comment by %s on %s_\n" % (comment['body'], comment['author'], comment['date'].strftime(dateformat))
-                                  
+
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
                     if not pretend:
-                        _issue = _repo.get_issue(issue.number)                        
+                        _issue = _repo.get_issue(issue.number)
                         assert _issue is not None
                         commentBody = tranlator.translate(commentBody)
                         _issue.create_comment(commentBody)
@@ -750,7 +764,7 @@ def _createTracToGithubUserMap(hub, definition, defaultToken):
                 raise _ConfigError(_OPTION_USERS,
                         u'Trac user "%s" must be mapped to only one token instead of "%s" and "%s"'
                          % (tracUser, existingMappedGithubUser, token))
-            result[tracUser] = token            
+            result[tracUser] = token
             if token != '*':
                 _validateGithubUser(hub, tracUser, token)
     return result
@@ -791,7 +805,7 @@ def main(argv=None):
         ticketsCsvPath = _getConfigOption(config, 'tickets', False, 'tickets.csv')
         token = _getConfigOption(config, 'token')
         userMapping = _getConfigOption(config, 'users', False, '*:{0}'.format(token))
-        trac_url = _getConfigOption(config, 'trac_url', False)        
+        trac_url = _getConfigOption(config, 'trac_url', False)
         convert_text = _getConfigOption(config, 'convert_text',
                                         required=False,
                                         defaultValue=False,
@@ -812,7 +826,7 @@ def main(argv=None):
                        attachmentsPrefix=attachmentsPrefix,
                        pretend=not options.really,
                        trac_url=trac_url, convert_text=convert_text)
-        
+
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
         _log.error(error)
