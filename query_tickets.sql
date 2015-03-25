@@ -1,5 +1,6 @@
 -- All Trac tickets to convert.
-select
+copy 
+(select
     id,
     type,
     owner,
@@ -10,8 +11,11 @@ select
     summary,
     description,
     time / 1000000 as PosixTime,
-    modified / 1000000 as ModifiedTime
+    changetime / 1000000 as ModifiedTime,
+    component
 from
     ticket
 order
-    by id
+    by id)
+to '/tmp/tickets.csv'
+with CSV

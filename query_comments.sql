@@ -1,5 +1,6 @@
 -- All Trac ticket comments to convert.
-select
+copy
+(select
     ticket,
     time / 1000000 as PosixTime,
     author,
@@ -10,4 +11,6 @@ where
     field = 'comment'
     and newvalue <> ''
 order
-    by ticket, time
+    by ticket, time)
+to '/tmp/comments.csv'
+with CSV
