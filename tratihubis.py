@@ -249,6 +249,10 @@ _validatedGithubTokens = set()
 _FakeMilestone = collections.namedtuple('_FakeMilestone', ['number', 'title'])
 _FakeIssue = collections.namedtuple('_FakeIssue', ['number', 'title', 'body', 'state'])
 
+csv.field_size_limit(sys.maxsize)
+
+
+
 
 class _ConfigError(Exception):
     def __init__(self, option, message):
@@ -412,16 +416,20 @@ def _shortened(text):
     return result
 
 
+def _addNewLabel(label, repo):
+    if label not in [l.name for l in repo.get_labels()]:
+        repo.create_label(label, '5319e7')
+
 def _tracTicketMaps(ticketsCsvPath):
     """
     Sequence of maps where each items describes the relevant fields of each row from the tickets CSV exported
     from Trac.
     """
-    EXPECTED_COLUMN_COUNT = 11
+    EXPECTED_COLUMN_COUNT = 12
     _log.info(u'read ticket details from "%s"', ticketsCsvPath)
     with open(ticketsCsvPath, "rb") as ticketCsvFile:
         csvReader = _UnicodeCsvReader(ticketCsvFile)
-        hasReadHeader = False
+        hasReadHeader = True
         for rowIndex, row in enumerate(csvReader):
             columnCount = len(row)
             if columnCount != EXPECTED_COLUMN_COUNT:
@@ -441,6 +449,7 @@ def _tracTicketMaps(ticketsCsvPath):
                     'description': row[8],
                     'createdtime': datetime.datetime.fromtimestamp(long(row[9])),
                     'modifiedtime': datetime.datetime.fromtimestamp(long(row[10])),
+                    'component': row[11]
                 }
                 yield ticketMap
             else:
@@ -480,7 +489,7 @@ def _createTicketToCommentsMap(commentsCsvPath):
         _log.info(u'read ticket comments from "%s"', commentsCsvPath)
         with open(commentsCsvPath, "rb") as commentsCsvFile:
             csvReader = _UnicodeCsvReader(commentsCsvFile)
-            hasReadHeader = False
+            hasReadHeader = True
             for rowIndex, row in enumerate(csvReader):
                 columnCount = len(row)
                 if columnCount != EXPECTED_COLUMN_COUNT:
@@ -504,6 +513,13 @@ def _createTicketToCommentsMap(commentsCsvPath):
                     hasReadHeader = True
     return result
 
+def is_int(s):
+    try:
+        long(s)
+        return True
+    except ValueError:
+        return False
+
 def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
     EXPECTED_COLUMN_COUNT = 4
     result = {}
@@ -519,7 +535,7 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
 
     with open(attachmentsCsvPath, "rb") as attachmentsCsvFile:
         attachmentsReader = _UnicodeCsvReader(attachmentsCsvFile)
-        hasReadHeader = False
+        hasReadHeader = True
         for rowIndex, row in enumerate(attachmentsReader):
             columnCount = len(row)
             if columnCount != EXPECTED_COLUMN_COUNT:
@@ -527,17 +543,19 @@ def _createTicketsToAttachmentsMap(attachmentsCsvPath, attachmentsPrefix):
                     u'attachment row must have %d columns but has %d: %r' %
                     (EXPECTED_COLUMN_COUNT, columnCount, row))
             if hasReadHeader:
-                attachmentMap = {
-                    'id': long(row[0]),
+                id_string = row[0]
+                if is_int(id_string):
+                    attachmentMap = {
+                    'id': long(id_string),
                     'author': row[3],
                     'filename': row[1],
                     'date': datetime.datetime.fromtimestamp(long(row[2])),
                     'fullpath': u'%s/%s/%s' % (attachmentsPrefix, row[0], row[1]),
-                }
-                if not attachmentMap['id'] in result:
-                    result[attachmentMap['id']] = [attachmentMap]
-                else:
-                    result[attachmentMap['id']].append(attachmentMap)
+                    }
+                    if not attachmentMap['id'] in result:
+                        result[attachmentMap['id']] = [attachmentMap]
+                    else:
+                        result[attachmentMap['id']].append(attachmentMap)
             else:
                 hasReadHeader = True
 
@@ -560,7 +578,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                    firstTicketIdToConvert=1, lastTicketIdToConvert=0,
                    labelMapping=None, userMapping="*:*",
                    attachmentsPrefix=None, pretend=True,
-                   trac_url=None, convert_text=False):
+                   trac_url=None, convert_text=False, ticketsToRender=False, addComponentLabels=False):
     
     assert hub is not None
     assert repo is not None
@@ -580,7 +598,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     else:
         Translator_ = NullTranslator
 
-    translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url)
+    translator = Translator_(repo, ticketsToIssuesMap, trac_url=trac_url, attachmentsPrefix=attachmentsPrefix)
         
     def possiblyAddLabel(labels, tracField, tracValue):
         label = labelTransformations.labelFor(tracField, tracValue)
@@ -593,7 +611,11 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
     for ticketMap in _tracTicketMaps(ticketsCsvPath):
         ticketId = ticketMap['id']
         title = ticketMap['summary']
-        if (ticketId >= firstTicketIdToConvert) \
+        renderTicket = True
+        if ticketsToRender:
+            if not ticketId in ticketsToRender:
+                renderTicket = False
+        if renderTicket and (ticketId >= firstTicketIdToConvert) \
                 and ((ticketId <= lastTicketIdToConvert) or (lastTicketIdToConvert == 0)):
             body = ticketMap['description']
             tracOwner = ticketMap['reporter'].strip()
@@ -619,7 +641,7 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
             _log.info(u'convert ticket #%d: %s', ticketId, _shortened(title))
 
             title = translator.translate(title)
-            body = translator.translate(body)
+            body = translator.translate(body, ticketId=ticketId)
 
             dateformat = "%m-%d-%Y at %H:%M"
             ticketString = '#{0}'.format(ticketId)
@@ -632,6 +654,9 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
 
             body += legacyInfo
 
+            if ticketsToRender:
+                print 'body of ticket:\n', body
+            
             if not pretend:
                 if milestone is None:
                     issue = _repo.create_issue(title, body)#, githubAssignee)
@@ -648,21 +673,34 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
             labels = []
             possiblyAddLabel(labels, 'type', ticketMap['type'])
             possiblyAddLabel(labels, 'resolution', ticketMap['resolution'])
+            
+            if addComponentLabels and ticketMap['component'] != 'None':
+                if not pretend:
+                    labels.append(ticketMap['component'])
+            if not pretend:
+                for l in labels:
+                    _addNewLabel(l, repo)
             if len(labels) > 0:
-                issue.edit(labels=labels)
-
+                _hub = github.Github(defaultToken)
+                _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
+                _issue = _repo.get_issue(issue.number)
+                _issue.edit(labels=labels)
+                
             attachmentsToAdd = tracTicketToAttachmentsMap.get(ticketId)
             if attachmentsToAdd is not None:
                 for attachment in attachmentsToAdd:
                     token = _tokenFor(repo, tracToGithubUserMap, attachment['author'], False)
                     attachmentAuthor = _userFor(token)
-                    legacyInfo = u"* %s attached [%s](%s) on %s\n"  \
+                    legacyInfo = u"_%s attached [%s](%s) on %s_\n"  \
                         % (attachment['author'], attachment['filename'], attachment['fullpath'], attachment['date'].strftime(dateformat))
-                _log.info(u'  added attachment from %s', attachmentAuthor)
+                    _log.info(u'  added attachment from %s', attachmentAuthor)
 
-                if not pretend:
-                    assert issue is not None
-                    issue.create_comment(legacyInfo)
+                    if ticketsToRender:
+                        print 'attachment legacy info:\n',legacyInfo
+                        
+                    if not pretend:
+                        assert issue is not None
+                        issue.create_comment(legacyInfo)
 
             commentsToAdd = tracTicketToCommentsMap.get(ticketId)
             if commentsToAdd is not None:
@@ -672,14 +710,22 @@ def migrateTickets(hub, repo, defaultToken, ticketsCsvPath,
                     _hub = github.Github(token)
                     _repo = _hub.get_repo('{0}/{1}'.format(repo.owner.login, repo.name))
 
+
+                    
                     commentBody = u"%s\n\n_Trac comment by %s on %s_\n" % (comment['body'], comment['author'], comment['date'].strftime(dateformat))
                                   
                     _log.info(u'  add comment by %s: %r', commentAuthor, _shortened(commentBody))
+
+                    commentBody = translator.translate(commentBody, ticketId=ticketId)
+
+                    if ticketsToRender:
+                        print 'commentBody:\n',commentBody
+                    
                     if not pretend:
                         _issue = _repo.get_issue(issue.number)                        
                         assert _issue is not None
-                        commentBody = tranlator.translate(commentBody)
                         _issue.create_comment(commentBody)
+
             if ticketMap['status'] == 'closed':
                 _log.info(u'  close issue')
                 if not pretend:
@@ -796,6 +842,18 @@ def main(argv=None):
                                         required=False,
                                         defaultValue=False,
                                         boolean=True)
+        ticketsToRender = _getConfigOption(config,
+                                           'ticketsToRender',
+                                           required=False,
+                                           defaultValue=False,
+                                           boolean=False)
+        addComponentLabels = _getConfigOption(config, 'addComponentLabels',
+                                              required=False,
+                                              defaultValue=False,
+                                              boolean=True)
+
+        if ticketsToRender:
+            ticketsToRender = [long(x) for x in ticketsToRender.split(',')]
 
         if not options.really:
             _log.warning(u'no actions are performed unless command line option --really is specified')
@@ -811,7 +869,7 @@ def main(argv=None):
                        labelMapping=labelMapping,
                        attachmentsPrefix=attachmentsPrefix,
                        pretend=not options.really,
-                       trac_url=trac_url, convert_text=convert_text)
+                       trac_url=trac_url, convert_text=convert_text, ticketsToRender=ticketsToRender, addComponentLabels=addComponentLabels)
         
         exitCode = 0
     except (EnvironmentError, OSError, _ConfigError, _CsvDataError), error:
